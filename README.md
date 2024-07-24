@@ -111,14 +111,69 @@ with either an exception object or None as an argument.
     * CL: connection_lost()
 ```
 
-So it means that, we can inherit this asyncio.Protocol, since we implement at least `data_received`, so, before we beginwe need to know that the data received in the socket, is actually bytes, nor string, so we need to implement a way to convert this data, and we can use `HttpRequestParser` from `httptools`
+So it means that, we can inherit this asyncio.Protocol, since we implement at least `data_received`, so, before we begin, 
+we need to know that the data received in the socket, is actually bytes, nor string, so we need to implement a way to convert this data, 
+and we can use `HttpRequestParser` from `httptools`
 
 ```python
-class Server(asyncio.Protocol, HttpParserMixin):
-    def __init__(self, loop, app):
+import asyncio
+from httptools import HttpRequestParser
+
+class Server(asyncio.Protocol):
+    def __init__(self):
         self._encoding = "utf-8"
         self._request_parser =  HttpRequestParser(self)
 
     def data_received(self, data):
+        print("Received: ", data)
         self._request_parser.feed_data(data)
 ```
+
+Our `Server` class is going to handle any request on the `data_received` method and use `HttpRequestParser` from `httptools` to convert this data for us.
+But now, we can start to build him to test our class!
+
+```python
+import asyncio
+
+loop = asyncio.get_event_loop()
+protocol = Server()
+server = loop.run_until_complete(
+    loop.create_server(lambda: protocol, host='127.0.0.1', port=8080)
+)
+loop.run_until_complete(server.serve_forever())
+```
+
+* `loop.create_server` is an asyncio function that creates a server object but does not start it immediately. Instead, it returns a coroutine
+
+* `lambda: protocol` is a lambda function that returns the `protocol` (our server) to each client connection 
+
+* `loop.run_until_complete(server.serve_forever())` is used to run the asyncio event loop for incoming connections
+
+Now our server should be running without any problem, let's make our class to test him!.
+
+
+```python
+import asyncio
+
+async def main():
+    message = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"
+    reader, writer = await asyncio.open_connection('127.0.0.1', 8080)
+
+    print(f'Send: {message}')
+    writer.write(message.encode())
+
+    data = await reader.read(100)
+    print(f'Received: {data.decode()}')
+
+    print('Close the connection')
+    writer.close()
+    await writer.wait_closed()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+And now, if it's everything OK, we can run our server, and try to connect from our client, and we should see on the terminal
+`Received:  b'GET / HTTP/1.1\r\nHost: localhost\r\n\r\n'`
+
+# Todo: Request and Response Handler
