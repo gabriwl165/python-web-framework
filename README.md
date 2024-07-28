@@ -56,22 +56,21 @@ this piece of code are going to send a request into that specific socket that we
 but as you can see, this code has a HUGE problem, we can only handle one request per time, we are also going to be affected in the time that the message got to be transmitted between the client and server.
 This mean that we cannot scale this project to handle hundreds and not even close to thoudsands of request in parallel, because:
 
-### This code is synchronous
-As we can see in 
+As we can see in, This code is synchronous 
 ```python
 while True:
     data, addr = s.recvfrom(MAX)
 ```
 Our code make a synchronous while true, and wait for receive a request from anything, meaning that we can make a request, but if we make another before the server is done with the first, this request will need to wait
-
-### Our code spend time waiting for transmittion
-As we can see in 
+Our code spend time waiting for Transmission.
 
 ```python
 s.send(b'This is another message')
 data = s.recv(MAX)
 ```
 `send` and `recv` wait for send and receive that in the network, and this can be delegate to the OS handle those things
+
+And, i know that we can use `select` to handle `poll` events, but it's not the focus of this guide.
 
 So, lets start builing a web server that can handle multiple requests and do not waste time with things that can be outsourced
 ## Transport and Protocol
@@ -132,6 +131,7 @@ class Server(asyncio.Protocol):
 Our `Server` class is going to handle any request on the `data_received` method and use `HttpRequestParser` from `httptools` to convert this data for us.
 But now, we can start to build him to test our class!
 
+<a id="main_method_v1"></a>
 ```python
 import asyncio
 
@@ -176,4 +176,147 @@ if __name__ == "__main__":
 And now, if it's everything OK, we can run our server, and try to connect from our client, and we should see on the terminal
 `Received:  b'GET / HTTP/1.1\r\nHost: localhost\r\n\r\n'`
 
-# Todo: Request and Response Handler
+But, this is not how a web framework looks like!.
+We need a way to create method that will be trigger as a request come asking for that path.
+Let's start adding some mora attribute for our `Server` class
+```python
+class Server(asyncio.Protocol):
+    def __init__(self):
+        self._encoding = "utf-8"
+        self.url = None
+        self.body = None
+        self._request_parser =  HttpRequestParser(self)
+    
+    def on_url(self, url):
+        self.url = url.decode('utf-8')
+
+    def data_received(self, data):
+        self._request_parser.feed_data(data)
+    
+    def on_body(self, data):
+        self.body = data
+        
+    def on_message_complete(self):
+        print("Message Finished!")
+```
+
+* `on_message_complete` is going to be triggered when the message is fully processed
+ 
+But now, we need to create something that can help us to handle the request, so we're going to create our own `Request` class
+```python
+class Request:
+
+    def __init__(self, method, url, body):
+        self.encoding = "utf-8"
+        self.method = method
+        self.url = url
+        self.body = body
+```
+
+Simple, isn't it? :P, but this can help us to separate the responsibility of the classes.
+now we can change the `on_message_complete` to:
+```python
+class Server(asyncio.Protocol):
+    def on_message_complete(self):
+        request = Request(
+            method=self._request_parser.get_method().decode('utf-8'),
+            url=self.url,
+            body=self.body,
+        )
+```
+
+Now, let's start building out `Router` it's going to be responsible to handle the request and to distribute to the correct method
+```python
+class Router:
+    def __init__(self):
+        self.mapping = {}
+
+    def add(self, path, methods_handler):
+        self.mapping[path] = methods_handler
+```
+
+with this class, we can add him at `Server` and a `add_route` method as well
+```python
+class Server(asyncio.Protocol):
+    def __init__(self):
+        self._encoding = "utf-8"
+        self.url = None
+        self.body = None
+        self._request_parser =  HttpRequestParser(self)
+        self.router = Router()
+    # ....
+    def add_route(self, path: str, methods_handler: dict):
+        self.router.add(path, methods_handler)
+```
+
+Now, as we have our `Server` instance from [here](#main_method_v1)
+We can pass this instance to `hello_world_app`, like this example.
+```python
+def hello_world_app(server: Server):
+    async def hello_world(request: Request):
+        print(f"Handle: {request.method} {request.url} {request.body}")
+
+    server.add_route("/hello_world", {"GET": hello_world})
+```
+We're close to make our first test! Let's just refactor some pieces of code at our `Server` class:
+```python
+class Server(asyncio.Protocol):
+    def on_message_complete(self):
+        request = Request(
+            method=self._request_parser.get_method().decode('utf-8'),
+            url=self.url,
+            body=self.body,
+        )
+        self.router.dispatch(request)
+```
+On our `Router` class:
+```python
+class Router:
+    def __init__(self, loop):
+        self.mapping = {}
+        self.loop: asyncio.AbstractEventLoop = loop
+
+    def add(self, path, methods_handler):
+        self.mapping[path] = methods_handler
+
+    def dispatch(self, request: Request):
+        handlers = self.mapping.get(request.url, None)
+        if not handlers:
+            return
+        method_handler = handlers.get(request.method, None)
+        if not method_handler:
+            return
+
+        self.loop.create_task(method_handler(request))
+```
+
+`dispatch` is going to handle the request, and see if there's any route if the current url that was send from the client.
+After find it, it's going to see if there's a method to handle for that specific HTTP method (e.g. GET, POST, PUT).
+After this we are going to create a task in the event loop to run the method for us, but take a look, now our `Router` class is required to receive the event loop as a instance parameter, so we need to change our `Server` class again:
+
+```python
+class Server(asyncio.Protocol):
+    def __init__(self, loop=None):
+        self.loop = loop or asyncio.get_event_loop()
+        self._encoding = "utf-8"
+        self.url = None
+        self.body = None
+        self._request_parser = HttpRequestParser(self)
+        self.router = Router(self.loop)
+```
+
+Now, let's change a little bit our client method so send a request to our `/hello_world` route:
+```python
+async def main():
+    message = 'GET /hello_world HTTP/1.1\r\nHost: example.com\r\n\r\n'
+    # ....
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+And, if it's everything fine, you should see in the terminal 
+```bash
+Handle: GET /hello_world None
+```
+

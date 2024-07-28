@@ -1,7 +1,7 @@
 import asyncio
 
 async def main():
-    message = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n"
+    message = 'GET /hello_world HTTP/1.1\r\nHost: example.com\r\n\r\n'
     reader, writer = await asyncio.open_connection('127.0.0.1', 8080)
 
     print(f'Send: {message}')

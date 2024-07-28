@@ -10,7 +10,7 @@ async def hello_world(request: Request):
 
 async def test_post(request: Request):
     body = await request.json()
-    return make_success_response({"body": body })
+    return make_success_response({"body": body})
 
 app.router.add_route(
     path="/api", methods_handler={'GET': hello_world, 'POST': test_post}
