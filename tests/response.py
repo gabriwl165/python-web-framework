@@ -20,6 +20,8 @@ class Response:
         body = self.body
         if isinstance(body, dict):
             body = json.dumps(body)
+        if not body:
+            body = ''
 
         messages = [
             f"HTTP/{self.version} {self.status_code} {status_msg}",
@@ -28,7 +30,7 @@ class Response:
             f"Connection: close"
         ]
 
-        if self.body is None:
+        if not body:
             return "\n".join(messages)
 
         if isinstance(self.body, str):
@@ -38,7 +40,3 @@ class Response:
 
         return "\n".join(messages)
 
-
-status_msg, status_description = BaseHTTPRequestHandler.responses.get(404)
-print(status_msg)
-print(status_description)

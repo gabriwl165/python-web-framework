@@ -479,6 +479,152 @@ One good advise, let's assume is this between time the client hangup? so our `se
         self.transport = None
 ```
 
-# Implement Body Request
+## Handling Request with body
 
+Currently, our server does not handle so well requests with some body, so we need to fix it.
+Firstm let's build a simple POST request with a body
 
+```python
+async def send_post():
+    message_template = (
+        'POST /hello_world HTTP/1.1\r\n'
+        'Host: example.com\r\n'
+        'Content-Type: application/json\r\n'
+        'Content-Length: {}\r\n'
+        '\r\n'
+        '{}'
+    )
+
+    # Define the JSON data to send in the body of the POST request
+    body = json.dumps({
+        'key1': 'value1',
+        'key2': 'value2'
+    })
+    content_length = len(body)
+    message = message_template.format(content_length, body)
+
+    reader, writer = await asyncio.open_connection('127.0.0.1', 8080)
+
+    # Send the POST request
+    writer.write(message.encode())
+    await writer.drain()
+
+    # Read the response
+    response = await reader.read(1024)
+    print('Received:', response.decode())
+
+    # Close the connection
+    writer.close()
+    await writer.wait_closed()
+```
+In our `Server` class we need to change the `on_body` method, to this:
+```python
+    def on_body(self, data):
+        self.body = data.decode(self.encoding)
+```
+
+The main reason it's because the request come in bytes, so it must be converted to string.
+The `on_message_complete` also need to be changed to handle JSON nor string.
+```python
+    def on_message_complete(self):
+        request = Request(
+            method=self._request_parser.get_method().decode('utf-8'),
+            url=self.url,
+            body=json.loads(self.body),
+        )
+        self.loop.create_task(self.router.dispatch(request))
+```
+`json.loads` convert string body into JSON (e.g. dict in python)
+So now, we can add a new route to handle the POST request.
+```python
+def hello_world_app(server: Server):
+    async def hello_world(request: Request):
+        print(f"Handle: {request.method} {request.url} {request.body}")
+        return Response(
+            200,
+            {
+                "hello": "world"
+            }
+        )
+
+    async def process_request(request: Request):
+        print(f"Handle: {request.method} {request.url} {request.body!s}")
+        return Response(
+            200,
+            {
+                **request.body,
+                'hello': 'back'
+            }
+        )
+
+    server.add_route("/hello_world", {
+        "GET": hello_world,
+        "POST": process_request
+    })
+```
+We're adding a new request handler to all POST requests into `/hello_world` 
+```python
+{
+    **request.body,
+    'hello': 'back'
+}
+```
+This piece of code is unpacking the request body dictionary and adding a new field with `'hello': 'back'`.
+
+But, there's a problem (always has), our `Response` class does not handle so well responses with bodies, so we need to make a brief fix.
+```python
+    def __str__(self):
+        # ...
+        body = self.body
+        if isinstance(body, dict):
+            body = json.dumps(body)
+        if not body:
+            body = ''    
+        
+        messages = [
+            f"HTTP/{self.version} {self.status_code} {status_msg}",
+            f"Content-Type: {self.content_type}",
+            f"Content-Length: {len(body)}",
+            f"Connection: close"
+        ]
+
+        if not body:
+            return "\n".join(messages)
+
+        # ...
+```
+We're validating if the body is a dictionary, so we need to `json` library to convert it to a string for us. and also avoid use `len()` with None.
+
+So, now, if we test to send a request to our server.
+Our client console might look like this:
+
+```bash
+Received: HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 53
+Connection: close
+
+{"key1": "value1", "key2": "value2", "hello": "back"}
+```
+
+And our server:
+```bash
+Handle: POST /hello_world {'key1': 'value1', 'key2': 'value2'}
+```
+
+So, IT WORKS! We're sending a 
+```JSON
+POST /hello_world
+{
+  "key1": "value1", 
+  "key2": "value2"
+}
+```
+And our end point is adding the field `'hello': 'back'` to the body that was send in the request as a response to the client.
+```JSON
+{
+  "key1": "value1", 
+  "key2": "value2", 
+  "hello": "back"
+}
+```
