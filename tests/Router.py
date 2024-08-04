@@ -4,10 +4,9 @@ from tests.request import Request
 
 
 class Router:
-    def __init__(self, loop, handler):
+    def __init__(self, handler):
         self.mapping = {}
         self.callback_handler = handler
-        self.loop: asyncio.AbstractEventLoop = loop
 
     def add(self, path, methods_handler):
         self.mapping[path] = methods_handler

@@ -1,5 +1,5 @@
 import asyncio
-from asyncio.selector_events import _SelectorSocketTransport
+import json
 from functools import partial
 from traceback import format_exception
 from typing import Optional
@@ -14,12 +14,12 @@ from tests.response import Response
 class Server(asyncio.Protocol):
     def __init__(self, loop=None):
         self.loop = loop or asyncio.get_event_loop()
-        self._encoding = "utf-8"
+        self.encoding = "utf-8"
         self.url = None
         self.body = None
         self.transport: Optional[asyncio.Transport] = None
         self._request_parser = HttpRequestParser(self)
-        self.router = Router(self.loop, self.request_callback_handler)
+        self.router = Router(self.request_callback_handler)
 
     def connection_made(self, transport):
         self.transport = transport
@@ -28,14 +28,14 @@ class Server(asyncio.Protocol):
         self.transport = None
 
     def response_writer(self, response):
-        self.transport.write(str(response).encode(self._encoding))
+        self.transport.write(str(response).encode(self.encoding))
         self.transport.close()
 
     def data_received(self, data):
         self._request_parser.feed_data(data)
 
     def on_body(self, data):
-        self.body = data
+        self.body = data.decode(self.encoding)
 
     def on_url(self, url):
         self.url = url.decode('utf-8')
@@ -44,7 +44,7 @@ class Server(asyncio.Protocol):
         request = Request(
             method=self._request_parser.get_method().decode('utf-8'),
             url=self.url,
-            body=self.body,
+            body=json.loads(self.body),
         )
         self.loop.create_task(self.router.dispatch(request))
 

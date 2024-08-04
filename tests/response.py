@@ -17,10 +17,14 @@ class Response:
 
     def __str__(self):
         status_msg, _ = BaseHTTPRequestHandler.responses.get(self.status_code)
+        body = self.body
+        if isinstance(body, dict):
+            body = json.dumps(body)
+
         messages = [
             f"HTTP/{self.version} {self.status_code} {status_msg}",
             f"Content-Type: {self.content_type}",
-            f"Content-Length: {len(self.body)}",
+            f"Content-Length: {len(body)}",
             f"Connection: close"
         ]
 

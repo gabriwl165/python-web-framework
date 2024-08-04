@@ -13,4 +13,17 @@ def hello_world_app(server: Server):
             }
         )
 
-    server.add_route("/hello_world", {"GET": hello_world})
+    async def process_request(request: Request):
+        print(f"Handle: {request.method} {request.url} {request.body!s}")
+        return Response(
+            200,
+            {
+                **request.body,
+                'hello': 'back'
+            }
+        )
+
+    server.add_route("/hello_world", {
+        "GET": hello_world,
+        "POST": process_request
+    })
