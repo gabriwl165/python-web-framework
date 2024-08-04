@@ -86,6 +86,7 @@ In the project we are going to cover the usage with asyncio.
 AsyncIO is a library to write concurrent code using the async/await syntax. asyncio is used as a foundation for multiple Python asynchronous frameworks that provide high-performance network and web-servers.
 
 
+<a id="asyncio.Protocol_documentation"></a>
 Let's start reading about asyncio.Protocol documentation:
 ```python
 Interface for stream protocol.
@@ -320,7 +321,164 @@ And, if it's everything fine, you should see in the terminal
 Handle: GET /hello_world None
 ```
 
-# Implement Response Object
+## Response class 
+
+But as we've seen, we're currently get `None` as response of our end point, but what if we want to response a text or even a JSON? 
+this is not possible, so we need to refactor somethings to be able to response things.
+
+First of all, let's create our own class Response:
+```python
+import json
+from typing import Any
+from http.server import BaseHTTPRequestHandler
+
+
+class Response:
+
+    def __init__(
+            self,
+            status_code: int,
+            body: Any
+    ):
+        self.status_code = status_code
+        self.body = body
+        self.version = "1.1"
+        self.content_type = "application/json"
+```
+* `status_code`: will be our status code that we want to response.
+* `body`: is going to be the body that we want to response.
+* `version`: is going to be fixed HTTP version 1.1.
+* `content_type`: also, is going to be fixed as the mime type for application/json 
+
+Now, we need to make a method that will convert this response into a compatible string with a socket connection.
+
+```python
+    def __str__(self):
+        status_msg, _ = BaseHTTPRequestHandler.responses.get(self.status_code)
+        messages = [
+            f"HTTP/{self.version} {self.status_code} {status_msg}",
+            f"Content-Type: {self.content_type}",
+            f"Content-Length: {len(self.body)}",
+            f"Connection: close"
+        ]
+
+        if self.body is None:
+            return "\n".join(messages)
+
+        if isinstance(self.body, str):
+            messages.append("\n" + self.body)
+        elif isinstance(self.body, dict):
+            messages.append("\n" + json.dumps(self.body))
+
+        return "\n".join(messages)
+```
+The hardest part of this snippet is `BaseHTTPRequestHandler.responses`, but i'm going to take a brief explanation.
+```python
+status_msg, status_description = BaseHTTPRequestHandler.responses.get(200)
+status_msg -> OK
+status_description -> Request fulfilled, document follows
+
+status_msg, status_description = BaseHTTPRequestHandler.responses.get(404)
+status_msg -> Not Found
+status_description -> Nothing matches the given URI
+```
+
+Basically, it just return for us the HTTP message and description for each HTTP status codes, so we can attach into our response.
+And that's it! Now we just need to change our `hello_world` route:
+
+```python
+def hello_world_app(server: Server):
+    async def hello_world(request: Request):
+        print(f"Handle: {request.method} {request.url} {request.body}")
+        return Response(
+            200,
+            {
+                "hello": "back"
+            }
+        )
+
+    server.add_route("/hello_world", {"GET": hello_world})
+```
+
+## Request Handler
+
+Now, to keep our support to responses, we need to change the way that we make request handle's, first of all, we need to change our `Server` class:
+```python
+from typing import Optional
+
+class Server(asyncio.Protocol):
+    def __init__(self, loop=None):
+        # ...
+        self.transport: Optional[asyncio.Transport] = None
+    
+    def connection_made(self, transport):
+        self.transport = transport
+
+```
+
+As we've read in the begging [here](#asyncio.Protocol_documentation) `When the connection is made successfully, connection_made() is
+called with a suitable transport object`, on the `connection_made` our parameter is an instance of asyncio.Transport, which represents the communication channel to the client.
+
+But, we need to take out the responsibility to handle and process the request from the `Router`, since her unique responsibility must be handle URL's path's
+```python
+class Router:
+    def __init__(self, loop, handler):
+        # ...
+        self.callback_handler = handler
+    
+    # ...
+    async def dispatch(self, request: Request):
+        handlers = self.mapping.get(request.url, None)
+        if not handlers:
+            return
+        method_handler = handlers.get(request.method, None)
+        if not method_handler:
+            return
+
+        await self.callback_handler(method_handler, request)
+```
+
+But, what is `self.callback_handler`?, this is going to be our callback method that the Router will trigger when the method for that route is found and must process the request.
+So we need to transport this responsibility to `Server` class
+
+```python
+from traceback import format_exception
+class Server(asyncio.Protocol):
+    def __init__(self, loop=None):
+        # ...
+        self.router = Router(self.loop, self.request_callback_handler)
+
+    async def request_callback_handler(self, method, request):
+        try:
+            resp = await method(request)
+        except Exception as exc:
+            resp = format_exception(exc)
+
+        if not isinstance(resp, Response):
+            raise RuntimeError(f"expect Response instance but got {type(resp)}")
+
+        self.response_writer(resp)    
+
+```
+
+Our `request_callback_handler` method is going to be triggred from `Router` sending us the request and the method that must be used to process him.
+Her response is needed to be send to `response_writer` that we're going to see below.
+
+
+```python
+    def response_writer(self, response):
+        self.transport.write(str(response).encode(self._encoding))
+        self.transport.close()
+```
+
+`response_writer` is a method that will receive our response and write it inside the socket connection to the client, and then, close it.
+One good advise, let's assume is this between time the client hangup? so our `self.transport` will keep with a disconnected socket, and this can be avoided implementing `connection_lost`:
+
+```python
+    def connection_lost(self, *args):
+        self.transport = None
+```
+
 # Implement Body Request
 
 
