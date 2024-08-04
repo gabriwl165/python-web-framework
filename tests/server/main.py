@@ -11,16 +11,15 @@ from tests.request import Request
 from tests.response import Response
 
 
-class Server(asyncio.Protocol):
+class Server(asyncio.Protocol, Router):
     def __init__(self, loop=None):
+        self.mapping = {}
         self.loop = loop or asyncio.get_event_loop()
         self.encoding = "utf-8"
         self.url = None
         self.body = None
         self.transport: Optional[asyncio.Transport] = None
         self._request_parser = HttpRequestParser(self)
-        self.router = Router(self.request_callback_handler)
-
     def connection_made(self, transport):
         self.transport = transport
 
@@ -46,10 +45,10 @@ class Server(asyncio.Protocol):
             url=self.url,
             body=json.loads(self.body),
         )
-        self.loop.create_task(self.router.dispatch(request))
+        self.loop.create_task(self.dispatch(request))
 
     def add_route(self, path: str, methods_handler: dict):
-        self.router.add(path, methods_handler)
+        self.add(path, methods_handler)
 
     async def request_callback_handler(self, method, request):
         try:
