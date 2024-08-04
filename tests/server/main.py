@@ -11,44 +11,21 @@ from tests.request import Request
 from tests.response import Response
 
 
-async def _handler(self, request, response_writer):
-    """
-    Process incoming request
-    :params request -> Request
-    :params response_writer
-    """
-    try:
-        match_info, handler = self._router.resolve(request)
-
-        request.match_info = match_info
-
-        if self._middlewares:
-            for md in self._middlewares:
-                handler = partial(md, handler=handler)
-
-        resp = await handler(request)
-    except Exception as exc:
-        resp = format_exception(exc)
-
-    if not isinstance(resp, Response):
-        raise RuntimeError(f"expect Response instance but got {type(resp)}")
-
-    response_writer(resp)
-
-
 class Server(asyncio.Protocol):
     def __init__(self, loop=None):
         self.loop = loop or asyncio.get_event_loop()
         self._encoding = "utf-8"
         self.url = None
         self.body = None
-        self.transport: _SelectorSocketTransport = None
+        self.transport: Optional[asyncio.Transport] = None
         self._request_parser = HttpRequestParser(self)
-        self._request_callback_handler = self.request_callback_handler
-        self.router = Router(self.loop, self._request_callback_handler)
+        self.router = Router(self.loop, self.request_callback_handler)
 
     def connection_made(self, transport):
         self.transport = transport
+
+    def connection_lost(self, *args):
+        self.transport = None
 
     def response_writer(self, response):
         self.transport.write(str(response).encode(self._encoding))

@@ -14,7 +14,6 @@ class Response:
         self.body = body
         self.version = "1.1"
         self.content_type = "application/json"
-        self.headers = None
 
     def __str__(self):
         status_msg, _ = BaseHTTPRequestHandler.responses.get(self.status_code)
@@ -24,10 +23,6 @@ class Response:
             f"Content-Length: {len(self.body)}",
             f"Connection: close"
         ]
-
-        if self.headers:
-            for header, value in self.headers.items():
-                messages.append(f"{header}: {value}")
 
         if self.body is None:
             return "\n".join(messages)
@@ -40,3 +35,6 @@ class Response:
         return "\n".join(messages)
 
 
+status_msg, status_description = BaseHTTPRequestHandler.responses.get(404)
+print(status_msg)
+print(status_description)
