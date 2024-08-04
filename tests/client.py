@@ -7,7 +7,7 @@ async def main():
     print(f'Send: {message}')
     writer.write(message.encode())
 
-    data = await reader.read(100)
+    data = await reader.read(900)
     print(f'Received: {data.decode()}')
 
     print('Close the connection')

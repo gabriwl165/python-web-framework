@@ -4,14 +4,15 @@ from tests.request import Request
 
 
 class Router:
-    def __init__(self, loop):
+    def __init__(self, loop, handler):
         self.mapping = {}
+        self.callback_handler = handler
         self.loop: asyncio.AbstractEventLoop = loop
 
     def add(self, path, methods_handler):
         self.mapping[path] = methods_handler
 
-    def dispatch(self, request: Request):
+    async def dispatch(self, request: Request):
         handlers = self.mapping.get(request.url, None)
         if not handlers:
             return
@@ -19,4 +20,5 @@ class Router:
         if not method_handler:
             return
 
-        self.loop.create_task(method_handler(request))
+        await self.callback_handler(method_handler, request)
+
