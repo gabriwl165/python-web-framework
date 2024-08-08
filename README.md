@@ -630,4 +630,100 @@ And our end point is adding the field `'hello': 'back'` to the body that was sen
 ```
 
 
-## Handle Not Found Routes
+## Handling Not Found Routes
+
+In our Router class, the code should look like this
+
+```python
+class Router:
+    def __init__(self, loop, handler):
+        self.mapping = {}
+        self.callback_handler = handler
+        self.loop: asyncio.AbstractEventLoop = loop
+
+    def add(self, path, methods_handler):
+        self.mapping[path] = methods_handler
+
+    async def dispatch(self, request: Request):
+        handlers = self.mapping.get(request.url, None)
+        if not handlers:
+            return
+        method_handler = handlers.get(request.method, None)
+        if not method_handler:
+            return
+
+        await self.callback_handler(method_handler, request)
+```
+
+The main problem is the `return` keyword, basicly, if the code returns, 
+in no point we're closing the connection with the client, meaning that the connection will keep open forever. 
+
+So we have two ways to deal with this problem:
+* Give for our Router `class` another callback function, that will close the connection
+* Refactor our `Router` to be extended from `Server`, so we can use `self` to call the close connection from the `Server`.
+
+In this guide we're going to follow the second options.
+
+So, let's begin from removing `self.router` from our `Server` constructor 
+```python
+self.router = Router(self.request_callback_handler)
+```
+
+In `on_message_complete` and `add_route`, let's just change from
+```python
+- self.loop.create_task(self.router.dispatch(request))
++ self.loop.create_task(self.dispatch(request))
+```
+```python
+- self.router.add(path, methods_handler)
++ self.add(path, methods_handler)
+```
+
+Since we don't have `self.router` anymore.
+
+In our `Server` class, let's extend it from our `Router`
+
+```python
+class Server(asyncio.Protocol, Router):
+    # ...
+```
+Now our class have all method inherited, it means, durying execution of `Server` if the method within `Router` is called, it can call a method from `Server` without any problem, since they're "mixed"
+
+So, let's start refactoring `Router` to call `Server` methods.
+```python
+class Router:
+
+    def add(self, path, methods_handler):
+        self.mapping[path] = methods_handler
+
+    async def dispatch(self, request: Request):
+        handlers = self.mapping.get(request.url, None)
+        if not handlers:
+            await self.response_writer(Response(
+              404,
+                {
+                    'message': f'Not Found'
+                }
+            ))
+        method_handler = handlers.get(request.method, None)
+        if not method_handler:
+            await self.response_writer(Response(
+                404,
+                {
+                    'message': f'Not Found'
+                }
+            ))
+
+        await self.request_callback_handler(method_handler, request)
+```
+
+`self.response_writer` and `self.request_callback_handler`, both are implemented in super class, let's asusme like this, so `Router` is calling a method that is implemented in a class that extended her, it basicly means that `Router` is a mixin class.
+
+```bash
+curl -X POST -H "Content-Type: application/json" -d '{"key1": "value1", "key2": "value2"}' http://127.0.0.1:8080/hello_world
+```
+
+
+
+
+
