@@ -1,13 +1,17 @@
 
 # A Python Web Framework
 
+In this guide, we're going to create a web framework using `asyncio`, that will be covered in this whole article.
+
+### Pre Requisites
+* Python: 3.8.10
+* Poetry: 1.7.1
+
 Building a Web Framework, we can start with 
 some pillars, such as:
 * Transport and Protocol
 * Request and Response objects
 * Application and Url Dispatcher
-* Exception Handling
-* Middleware
 
 ## Web Server using socket
 
@@ -121,8 +125,8 @@ from httptools import HttpRequestParser
 
 class Server(asyncio.Protocol):
     def __init__(self):
-        self._encoding = "utf-8"
-        self._request_parser =  HttpRequestParser(self)
+        self.encoding = "utf-8"
+        self._request_parser = HttpRequestParser(self)
 
     def data_received(self, data):
         print("Received: ", data)
@@ -150,7 +154,7 @@ loop.run_until_complete(server.serve_forever())
 
 * `loop.run_until_complete(server.serve_forever())` is used to run the asyncio event loop for incoming connections
 
-Now our server should be running without any problem, let's make our class to test him!.
+Now our server should be running without any problem, let's make our first request to test him!.
 
 
 ```python
@@ -183,10 +187,10 @@ Let's start adding some mora attribute for our `Server` class
 ```python
 class Server(asyncio.Protocol):
     def __init__(self):
-        self._encoding = "utf-8"
+        self.encoding = "utf-8"
         self.url = None
         self.body = None
-        self._request_parser =  HttpRequestParser(self)
+        self._request_parser = HttpRequestParser(self)
     
     def on_url(self, url):
         self.url = url.decode('utf-8')
@@ -240,7 +244,7 @@ with this class, we can add him at `Server` and a `add_route` method as well
 ```python
 class Server(asyncio.Protocol):
     def __init__(self):
-        self._encoding = "utf-8"
+        self.encoding = "utf-8"
         self.url = None
         self.body = None
         self._request_parser =  HttpRequestParser(self)
@@ -259,7 +263,22 @@ def hello_world_app(server: Server):
 
     server.add_route("/hello_world", {"GET": hello_world})
 ```
-We're close to make our first test! Let's just refactor some pieces of code at our `Server` class:
+
+And we can add `hello_world_app` right after instantiate the Server object
+
+```python
+loop = asyncio.get_event_loop()
+protocol = Server()
+
+hello_world_app(protocol)
+
+server = loop.run_until_complete(
+    loop.create_server(lambda: protocol, host='127.0.0.1', port=8080)
+)
+loop.run_until_complete(server.serve_forever())
+```
+
+We're close to make our first test! Let's just add some pieces of code at our `Server` class:
 ```python
 class Server(asyncio.Protocol):
     def on_message_complete(self):
@@ -299,7 +318,7 @@ After this we are going to create a task in the event loop to run the method for
 class Server(asyncio.Protocol):
     def __init__(self, loop=None):
         self.loop = loop or asyncio.get_event_loop()
-        self._encoding = "utf-8"
+        self.encoding = "utf-8"
         self.url = None
         self.body = None
         self._request_parser = HttpRequestParser(self)
@@ -467,7 +486,7 @@ Her response is needed to be send to `response_writer` that we're going to see b
 
 ```python
     def response_writer(self, response):
-        self.transport.write(str(response).encode(self._encoding))
+        self.transport.write(str(response).encode(self.encoding))
         self.transport.close()
 ```
 
@@ -689,10 +708,25 @@ class Server(asyncio.Protocol, Router):
 ```
 Now our class have all method inherited, it means, durying execution of `Server` if the method within `Router` is called, it can call a method from `Server` without any problem, since they're "mixed"
 
+But since our `Server` already has `__init__` method, `Router` cannot have the same method implemented, so we need to catch 
+* self.mapping
+and add into the constructor from `Server`, that should look like this:
+```python
+    def __init__(self, loop=None):
+        self.mapping = {}
+        self.loop = loop or asyncio.get_event_loop()
+        self.encoding = "utf-8"
+        self.url = None
+        self.body = None
+        self._request_parser = HttpRequestParser(self)
+        self.transport: Optional[asyncio.Transport] = None
+```
+
 So, let's start refactoring `Router` to call `Server` methods.
 ```python
 class Router:
-
+    # Removed __init__ method
+    
     def add(self, path, methods_handler):
         self.mapping[path] = methods_handler
 
@@ -719,9 +753,17 @@ class Router:
 
 `self.response_writer` and `self.request_callback_handler`, both are implemented in super class, let's asusme like this, so `Router` is calling a method that is implemented in a class that extended her, it basicly means that `Router` is a mixin class.
 
+So, let's test by sending a simple POST Request to a route that don't exists in our project:
+
 ```bash
-curl -X POST -H "Content-Type: application/json" -d '{"key1": "value1", "key2": "value2"}' http://127.0.0.1:8080/hello_world
+curl -X POST -H "Content-Type: application/json" -d '{"key1": "value1", "key2": "value2"}' http://127.0.0.1:8080/not_created
 ```
+
+And your response should be:
+```json
+{"message": "Not Found"}
+```
+
 
 
 

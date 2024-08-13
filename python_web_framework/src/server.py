@@ -1,36 +1,60 @@
 import asyncio
-from threading import Thread
+import json
+from traceback import format_exception
+from typing import Optional
 
 from httptools import HttpRequestParser
-from python_web_framework.src.handler.request import Request
 
-from .http_parser import HttpParserMixin
+from python_web_framework.src.response import Response
+from python_web_framework.src.router import Router
+from python_web_framework.src.request import Request
 
 
-class Server(asyncio.Protocol, HttpParserMixin):
-    def __init__(self, loop, handler, app):
-        self._loop = loop
-        self._app = app
-        self._encoding = "utf-8"
-        self._url = None
-        self._request = None
-        self._body = None
-        self._request_class = Request
-        self._request_handler = handler
-        self._request_handler_task = None
-        self._transport = None
+class Server(asyncio.Protocol, Router):
+    def __init__(self, loop=None):
+        self.mapping = {}
+        self.loop = loop or asyncio.get_event_loop()
+        self.encoding = "utf-8"
+        self.url = None
+        self.body = None
         self._request_parser = HttpRequestParser(self)
-        self._headers = {}
+        self.transport: Optional[asyncio.Transport] = None
 
-    def connection_made(self, transport):
-        self._transport = transport
+    async def request_callback_handler(self, method, request):
+        try:
+            resp = await method(request)
+        except Exception as exc:
+            resp = format_exception(exc)
 
-    def connection_lost(self, *args):
-        self._transport = None
+        if not isinstance(resp, Response):
+            raise RuntimeError(f"expect Response instance but got {type(resp)}")
+
+        self.response_writer(resp)
 
     def response_writer(self, response):
-        self._transport.write(str(response).encode(self._encoding))
-        self._transport.close()
+        self.transport.write(str(response).encode(self.encoding))
+        self.transport.close()
+
+    def connection_made(self, transport):
+        self.transport = transport
+
+    def add_route(self, path: str, methods_handler: dict):
+        self.add(path, methods_handler)
+
+    def on_url(self, url):
+        self.url = url.decode('utf-8')
 
     def data_received(self, data):
         self._request_parser.feed_data(data)
+
+    def on_body(self, data):
+        self.body = data.decode(self.encoding)
+
+    def on_message_complete(self):
+        request = Request(
+            method=self._request_parser.get_method().decode('utf-8'),
+            url=self.url,
+            body=json.loads(self.body),
+        )
+        self.loop.create_task(self.dispatch(request))
+
