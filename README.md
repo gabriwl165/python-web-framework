@@ -1,4 +1,3 @@
-
 # A Python Web Framework
 
 In this guide, we're going to create a web framework using `asyncio`, that will be covered in this whole article.
@@ -7,8 +6,7 @@ In this guide, we're going to create a web framework using `asyncio`, that will 
 * Python: 3.8.10
 * Poetry: 1.7.1
 
-Building a Web Framework, we can start with 
-some pillars, such as:
+When building a web framework, we can start with some key pillars, such as:
 * Transport and Protocol
 * Request and Response objects
 * Application and Url Dispatcher
@@ -30,11 +28,11 @@ while True:
     print("THe Client at", addr, 'received data:', repr(data))
     s.sendto(b'Your data has been received', addr)
 ```
-first of all, we start making a bind into the operational system to start our server
+First, we begin by binding to the operating system to start our server.
 ```python
 s.bind(('127.0.0.1', PORT))
 ```
-now, we can handle every request made to that IP:PORT, for example:
+Now, we can handle every request made to that IP and port. For example:
 
 ```python
 import socket, sys
@@ -55,39 +53,43 @@ while True:
     break
 print(f"The Server says", repr(data))
 ```
-this piece of code are going to send a request into that specific socket that we built.
+This piece of code is going to send a request to the specific socket we built.
 
-but as you can see, this code has a HUGE problem, we can only handle one request per time, we are also going to be affected in the time that the message got to be transmitted between the client and server.
-This mean that we cannot scale this project to handle hundreds and not even close to thoudsands of request in parallel, because:
+But as you can see, this code has a significant problem: we can only handle one request at a time. 
+Additionally, the time taken to transmit messages between the client and server will affect performance. 
+This means we cannot scale this project to handle hundreds, let alone thousands, of requests in parallel because:
 
-As we can see in, This code is synchronous 
+As we can see, this code is synchronous. 
 ```python
 while True:
     data, addr = s.recvfrom(MAX)
 ```
-Our code make a synchronous while true, and wait for receive a request from anything, meaning that we can make a request, but if we make another before the server is done with the first, this request will need to wait
-Our code spend time waiting for Transmission.
+Our code runs a synchronous `while true` loop and waits to receive a request from any source. 
+This means that while we can handle one request, if another request is made before the server has finished processing the first, the new request will have to wait. 
+Additionally, our code spends time waiting for data transmission.
 
 ```python
 s.send(b'This is another message')
 data = s.recv(MAX)
 ```
-`send` and `recv` wait for send and receive that in the network, and this can be delegate to the OS handle those things
+send and recv wait to send and receive data over the network, but this can be delegated to the operating system to handle.
 
-And, i know that we can use `select` to handle `poll` events, but it's not the focus of this guide.
+Note: I am aware that we can use select to handle poll events, but that is not the focus of this guide.
 
-So, lets start builing a web server that can handle multiple requests and do not waste time with things that can be outsourced
+So, let's start building a web server that can handle multiple requests and avoid wasting time on tasks that can be outsourced.
 ## Transport and Protocol
 
-Currently in python, has many ways to handle parallel process, such as:
+Currently in Python, there are many ways to handle parallel or concurrently processing, such as:
 
-* Process (multiprocessing)
-* Thread (threading)
-* AsyncIO (asyncio)
+* Process (using the `multiprocessing` module)
+* Thread (using the `threading` module)
+* AsyncIO (using the `asyncio` module)
 
-In the project we are going to cover the usage with asyncio.
+In this project, we will cover the usage of `asyncio`.
 
-AsyncIO is a library to write concurrent code using the async/await syntax. asyncio is used as a foundation for multiple Python asynchronous frameworks that provide high-performance network and web-servers.
+
+`AsyncIO` is a library for writing concurrent code using the async/await syntax. 
+It serves as a foundation for multiple Python asynchronous frameworks that provide high-performance network and web servers.
 
 
 <a id="asyncio.Protocol_documentation"></a>
@@ -115,9 +117,9 @@ with either an exception object or None as an argument.
     * CL: connection_lost()
 ```
 
-So it means that, we can inherit this asyncio.Protocol, since we implement at least `data_received`, so, before we begin, 
-we need to know that the data received in the socket, is actually bytes, nor string, so we need to implement a way to convert this data, 
-and we can use `HttpRequestParser` from `httptools`
+This means that we can inherit from asyncio.Protocol, as long as we implement at least the `data_received` method. 
+Before we begin, it's important to understand that the data received from the socket is actually in bytes, not strings. 
+Therefore, we need to implement a way to convert this data, and we can use the `HttpRequestParser` from the `httptools` library.
 
 ```python
 import asyncio
@@ -133,8 +135,8 @@ class Server(asyncio.Protocol):
         self._request_parser.feed_data(data)
 ```
 
-Our `Server` class is going to handle any request on the `data_received` method and use `HttpRequestParser` from `httptools` to convert this data for us.
-But now, we can start to build him to test our class!
+Our `Server` class will handle any requests in the `data_received` method and use the `HttpRequestParser`
+from the httptools library to convert the data for us. Now, let's start building it so we can test our class!
 
 <a id="main_method_v1"></a>
 ```python
@@ -148,13 +150,13 @@ server = loop.run_until_complete(
 loop.run_until_complete(server.serve_forever())
 ```
 
-* `loop.create_server` is an asyncio function that creates a server object but does not start it immediately. Instead, it returns a coroutine
+* `loop.create_server` is an asyncio function that creates a server object but doesn't start it immediately. Instead, it returns a coroutine.
 
-* `lambda: protocol` is a lambda function that returns the `protocol` (our server) to each client connection 
+* `lambda: protocol` is a lambda function that returns the protocol (our server) for each client connection. 
 
-* `loop.run_until_complete(server.serve_forever())` is used to run the asyncio event loop for incoming connections
+* `loop.run_until_complete(server.serve_forever())` is used to run the asyncio event loop continuously to handle incoming connections.
 
-Now our server should be running without any problem, let's make our first request to test him!.
+Now our server should be running without any problems. Let's make our first request to test it!
 
 
 ```python
@@ -178,12 +180,12 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-And now, if it's everything OK, we can run our server, and try to connect from our client, and we should see on the terminal
+And now, if everything is OK, we can run our server and try to connect from our client. We should see the following on the terminal:
 `Received:  b'GET / HTTP/1.1\r\nHost: localhost\r\n\r\n'`
 
-But, this is not how a web framework looks like!.
-We need a way to create method that will be trigger as a request come asking for that path.
-Let's start adding some mora attribute for our `Server` class
+But this is not how a web framework should look! 
+We need a way to create methods that will be triggered when a request comes in for a specific path. 
+Let's start by adding some more attributes to our `Server` class
 ```python
 class Server(asyncio.Protocol):
     def __init__(self):
@@ -205,9 +207,9 @@ class Server(asyncio.Protocol):
         print("Message Finished!")
 ```
 
-* `on_message_complete` is going to be triggered when the message is fully processed
+* `on_message_complete` will be triggered when the message has been fully processed.
  
-But now, we need to create something that can help us to handle the request, so we're going to create our own `Request` class
+But now, we need to create something that will help us handle the request, so we'll create our own `Request` class.
 ```python
 class Request:
 
@@ -218,8 +220,9 @@ class Request:
         self.body = body
 ```
 
-Simple, isn't it? :P, but this can help us to separate the responsibility of the classes.
-now we can change the `on_message_complete` to:
+Simple, isn't it? :P But this approach helps us separate the responsibilities of our classes. 
+Now, we can modify the `on_message_complete` method to:
+
 ```python
 class Server(asyncio.Protocol):
     def on_message_complete(self):
@@ -230,7 +233,7 @@ class Server(asyncio.Protocol):
         )
 ```
 
-Now, let's start building out `Router` it's going to be responsible to handle the request and to distribute to the correct method
+Now, let's start building our `Router`. It will be responsible for handling requests and routing them to the correct method.
 ```python
 class Router:
     def __init__(self):
@@ -240,7 +243,7 @@ class Router:
         self.mapping[path] = methods_handler
 ```
 
-with this class, we can add him at `Server` and a `add_route` method as well
+With this class, we can add it to the `Server` and also create an `add_route` method.
 ```python
 class Server(asyncio.Protocol):
     def __init__(self):
@@ -254,8 +257,7 @@ class Server(asyncio.Protocol):
         self.router.add(path, methods_handler)
 ```
 
-Now, as we have our `Server` instance from [here](#main_method_v1)
-We can pass this instance to `hello_world_app`, like this example.
+Now that we have our `Server` instance from [here](#main_method_v1) we can pass this instance to `hello_world_app`, as shown in the example below.
 ```python
 def hello_world_app(server: Server):
     async def hello_world(request: Request):
@@ -278,7 +280,7 @@ server = loop.run_until_complete(
 loop.run_until_complete(server.serve_forever())
 ```
 
-We're close to make our first test! Let's just add some pieces of code at our `Server` class:
+We're close to making our first test! Let's just add a few more pieces of code to our `Server` class:
 ```python
 class Server(asyncio.Protocol):
     def on_message_complete(self):
@@ -310,9 +312,9 @@ class Router:
         self.loop.create_task(method_handler(request))
 ```
 
-`dispatch` is going to handle the request, and see if there's any route if the current url that was send from the client.
-After find it, it's going to see if there's a method to handle for that specific HTTP method (e.g. GET, POST, PUT).
-After this we are going to create a task in the event loop to run the method for us, but take a look, now our `Router` class is required to receive the event loop as a instance parameter, so we need to change our `Server` class again:
+`dispatch` will handle the request and check if there’s a route matching the URL sent by the client. 
+If a matching route is found, it will then determine if there’s a method available to handle the specific HTTP method (e.g., GET, POST, PUT). Once identified, a task will be created in the event loop to run the corresponding method. 
+Note that our `Router` class now requires the event loop as an instance parameter, so we’ll need to modify our `Server` class accordingly
 
 ```python
 class Server(asyncio.Protocol):
@@ -325,7 +327,7 @@ class Server(asyncio.Protocol):
         self.router = Router(self.loop)
 ```
 
-Now, let's change a little bit our client method so send a request to our `/hello_world` route:
+Now, let's modify our client method slightly to send a request to our `/hello_world` route:
 ```python
 async def main():
     message = 'GET /hello_world HTTP/1.1\r\nHost: example.com\r\n\r\n'
@@ -335,17 +337,17 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-And, if it's everything fine, you should see in the terminal 
+And if everything is fine, you should see the following in the terminal: 
 ```bash
 Handle: GET /hello_world None
 ```
 
 ## Response class 
 
-But as we've seen, we're currently get `None` as response of our end point, but what if we want to response a text or even a JSON? 
-this is not possible, so we need to refactor somethings to be able to response them.
+But as we've seen, we're currently getting `None` as the response from our endpoint. 
+But what if we want to return a text or even a JSON response? This isn't possible with the current setup, so we need to refactor some parts of our code to make this possible.
 
-First of all, let's create our own class Response:
+First, let's create our own `Response` class:
 ```python
 import json
 from typing import Any
