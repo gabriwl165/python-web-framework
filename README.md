@@ -366,10 +366,10 @@ class Response:
         self.version = "1.1"
         self.content_type = "application/json"
 ```
-* `status_code`: will be our status code that we want to response.
-* `body`: is going to be the body that we want to response.
-* `version`: is going to be fixed HTTP version 1.1.
-* `content_type`: also, is going to be fixed as the mime type for application/json 
+* `status_code`: This will be the status code that we want to return.
+* `body`: This will be the body of the response.
+* `version`: This will be the fixed HTTP version, set to 1.1.
+* `content_type`: This will also be fixed, set to the MIME type for `application/json`. 
 
 Now, we need to make a method that will convert this response into a compatible string with a socket connection.
 
@@ -393,7 +393,7 @@ Now, we need to make a method that will convert this response into a compatible 
 
         return "\n".join(messages)
 ```
-The hardest part of this snippet is `BaseHTTPRequestHandler.responses`, but i'm going to take a brief explanation.
+The most challenging part of this snippet is `BaseHTTPRequestHandler.responses`, but I'll provide a brief explanation.
 ```python
 status_msg, status_description = BaseHTTPRequestHandler.responses.get(200)
 status_msg -> OK
@@ -404,8 +404,8 @@ status_msg -> Not Found
 status_description -> Nothing matches the given URI
 ```
 
-Basically, it just return for us the HTTP message and description for each HTTP status codes, so we can attach into our response.
-And that's it! Now we just need to change our `hello_world` route:
+Basically, it just returns the HTTP message and description for each status code, allowing us to include them in our response. 
+And that's it! Now we just need to update our `hello_world` route:
 
 ```python
 def hello_world_app(server: Server):
@@ -423,7 +423,8 @@ def hello_world_app(server: Server):
 
 ## Request Handler
 
-Now, to keep our support to responses, we need to change the way that we make request handle's, first of all, we need to change our `Server` class:
+Now, to maintain support for responses, we need to modify the way we handle requests. 
+First, we need to update our `Server` class:
 ```python
 from typing import Optional
 
@@ -437,10 +438,10 @@ class Server(asyncio.Protocol):
 
 ```
 
-As we've read in the begging [here](#asyncio.Protocol_documentation) `When the connection is made successfully, connection_made() is
-called with a suitable transport object`, on the `connection_made` our parameter is an instance of asyncio.Transport, which represents the communication channel to the client.
+As mentioned at the beginning, [here](#asyncio.Protocol_documentation) When the connection is made successfully,  `connection_made()` is
+called with a suitable transport object, on the `connection_made` our parameter is an instance of asyncio.Transport, which represents the communication channel to the client.
 
-But, we need to take out the responsibility to handle and process the request from the `Router`, since her unique responsibility must be handle URL's path's
+However, we need to remove the responsibility of handling and processing requests from the `Router`, as its sole responsibility should be managing URL paths.
 ```python
 class Router:
     def __init__(self, loop, handler):
@@ -459,8 +460,8 @@ class Router:
         await self.callback_handler(method_handler, request)
 ```
 
-But, what is `self.callback_handler`?, this is going to be our callback method that the Router will trigger when the method for that route is found and must process the request.
-So we need to transport this responsibility to `Server` class
+But what is `self.callback_handler`? This will be our callback method that the `Router` will trigger when the appropriate method for that route is found and needs to process the request. 
+Therefore, we need to transfer this responsibility to the `Server` class.
 
 ```python
 from traceback import format_exception
@@ -482,9 +483,8 @@ class Server(asyncio.Protocol):
 
 ```
 
-Our `request_callback_handler` method is going to be triggred from `Router` sending us the request and the method that must be used to process him.
-Her response is needed to be send to `response_writer` that we're going to see below.
-
+Our `request_callback_handler` method will be triggered by the `Router`, sending us the request and the method that should be used to process it. 
+The response then needs to be sent to the `response_writer`, which we'll cover below.
 
 ```python
     def response_writer(self, response):
@@ -492,8 +492,9 @@ Her response is needed to be send to `response_writer` that we're going to see b
         self.transport.close()
 ```
 
-`response_writer` is a method that will receive our response and write it inside the socket connection to the client, and then, close it.
-One good advise, let's assume is this between time the client hangup? so our `self.transport` will keep with a disconnected socket, and this can be avoided implementing `connection_lost`:
+`response_writer` is a method that receives our response, writes it to the socket connection to the client, and then closes the connection. 
+One important piece of advice: what if, during this time, the client hangs up? In that case, `self.transport` would be left with a disconnected socket. 
+This can be prevented by implementing the `connection_lost` method.
 
 ```python
     def connection_lost(self, *args):
@@ -502,8 +503,8 @@ One good advise, let's assume is this between time the client hangup? so our `se
 
 ## Handling Request with body
 
-Currently, our server does not handle so well requests with some body, so we need to fix it.
-Firstm let's build a simple POST request with a body
+Currently, our server doesn't handle requests with a body very well, so we need to fix that. 
+First, let's build a simple POST request with a body.
 
 ```python
 async def send_post():
@@ -538,14 +539,14 @@ async def send_post():
     writer.close()
     await writer.wait_closed()
 ```
-In our `Server` class we need to change the `on_body` method, to this:
+In our `Server` class, we need to update the `on_body` method to the following:
 ```python
     def on_body(self, data):
         self.body = data.decode(self.encoding)
 ```
 
-The main reason it's because the request come in bytes, so it must be converted to string.
-The `on_message_complete` also need to be changed to handle JSON nor string.
+The main reason is that the request comes in as bytes, so it must be converted to a string. 
+The `on_message_complete` method also needs to be updated to handle both JSON and strings.
 ```python
     def on_message_complete(self):
         request = Request(
@@ -555,8 +556,8 @@ The `on_message_complete` also need to be changed to handle JSON nor string.
         )
         self.loop.create_task(self.router.dispatch(request))
 ```
-`json.loads` convert string body into JSON (e.g. dict in python)
-So now, we can add a new route to handle the POST request.
+`json.loads` converts the string body into JSON (e.g., a dictionary in Python). 
+Now, we can add a new route to handle the POST request.
 ```python
 def hello_world_app(server: Server):
     async def hello_world(request: Request):
@@ -583,16 +584,16 @@ def hello_world_app(server: Server):
         "POST": process_request
     })
 ```
-We're adding a new request handler to all POST requests into `/hello_world` 
+We're adding a new request handler for all POST requests to `/hello_world`. 
 ```python
 {
     **request.body,
     'hello': 'back'
 }
 ```
-This piece of code is unpacking the request body dictionary and adding a new field with `'hello': 'back'`.
+This piece of code unpacks the request body dictionary and adds a new field with `'hello': 'back'`.
 
-But, there's a problem (always has), our `Response` class does not handle so well responses with bodies, so we need to make a brief fix.
+However, there's a problem (there always is): our `Response` class doesn't handle responses with bodies very well, so we need to make a quick fix.
 ```python
     def __str__(self):
         # ...
@@ -614,10 +615,9 @@ But, there's a problem (always has), our `Response` class does not handle so wel
 
         # ...
 ```
-We're validating if the body is a dictionary, so we need to `json` library to convert it to a string for us. and also avoid use `len()` with None.
+We're validating whether the body is a dictionary, and if it is, we need to use the `json` library to convert it to a string. Additionally, we should avoid using `len()` on `None`.
 
-So, now, if we test to send a request to our server.
-Our client console might look like this:
+Now, if we test sending a request to our server, our client console might look like this:
 
 ```bash
 Received: HTTP/1.1 200 OK
@@ -628,12 +628,12 @@ Connection: close
 {"key1": "value1", "key2": "value2", "hello": "back"}
 ```
 
-And our server:
+And our server might look like this:
 ```bash
 Handle: POST /hello_world {'key1': 'value1', 'key2': 'value2'}
 ```
 
-So, IT WORKS! We're sending a 
+So, IT WORKS! We're successfully sending a request. 
 ```JSON
 POST /hello_world
 {
@@ -641,7 +641,7 @@ POST /hello_world
   "key2": "value2"
 }
 ```
-And our end point is adding the field `'hello': 'back'` to the body that was send in the request as a response to the client.
+And our endpoint is adding the field `'hello': 'back'` to the body that was sent in the request, and returning it as a response to the client.
 ```JSON
 {
   "key1": "value1", 
@@ -653,7 +653,7 @@ And our end point is adding the field `'hello': 'back'` to the body that was sen
 
 ## Handling Not Found Routes
 
-In our Router class, the code should look like this
+In our `Router` class, the code should look like this:
 
 ```python
 class Router:
@@ -676,21 +676,21 @@ class Router:
         await self.callback_handler(method_handler, request)
 ```
 
-The main problem is the `return` keyword, basicly, if the code returns, 
-in no point we're closing the connection with the client, meaning that the connection will keep open forever. 
+The main problem lies with the `return` keyword. 
+Essentially, if the code returns, there’s no point where we close the connection with the client, meaning the connection will remain open indefinitely. 
 
-So we have two ways to deal with this problem:
-* Give for our Router `class` another callback function, that will close the connection
-* Refactor our `Router` to be extended from `Server`, so we can use `self` to call the close connection from the `Server`.
+We have two options to address this problem:
+* Provide our `Router` class with another callback function to close the connection.
+* Refactor our `Router` class to extend from `Server`, allowing us to use `self` to call the connection close method directly from the `Server`.
 
-In this guide we're going to follow the second options.
+In this guide, we’ll follow the second option.
 
-So, let's begin from removing `self.router` from our `Server` constructor 
+So, let’s start by removing `self.router` from our `Server` constructor.
 ```python
 self.router = Router(self.request_callback_handler)
 ```
 
-In `on_message_complete` and `add_route`, let's just change from
+In the `on_message_complete` and `add_route` methods, let's simply change from:
 ```python
 - self.loop.create_task(self.router.dispatch(request))
 + self.loop.create_task(self.dispatch(request))
@@ -700,19 +700,16 @@ In `on_message_complete` and `add_route`, let's just change from
 + self.add(path, methods_handler)
 ```
 
-Since we don't have `self.router` anymore.
-
-In our `Server` class, let's extend it from our `Router`
+Since we no longer have `self.router`, let's extend our `Server` class from our `Router` class.
 
 ```python
 class Server(asyncio.Protocol, Router):
     # ...
 ```
-Now our class have all method inherited, it means, durying execution of `Server` if the method within `Router` is called, it can call a method from `Server` without any problem, since they're "mixed"
+Now that our class has inherited all methods, it means that during the execution of `Server`, if a method within `Router` is called, it can invoke a method from `Server` without any issues, since they're now integrated.
 
-But since our `Server` already has `__init__` method, `Router` cannot have the same method implemented, so we need to catch 
-* self.mapping
-and add into the constructor from `Server`, that should look like this:
+However, since our `Server` class already has an `__init__` method, the `Router` class cannot implement the same method. 
+Therefore, we need to capture `self.mapping` and add it to the constructor of `Server`, which should look like this:
 ```python
     def __init__(self, loop=None):
         self.mapping = {}
@@ -724,7 +721,7 @@ and add into the constructor from `Server`, that should look like this:
         self.transport: Optional[asyncio.Transport] = None
 ```
 
-So, let's start refactoring `Router` to call `Server` methods.
+So, let's begin refactoring the `Router` to call `Server` methods.
 ```python
 class Router:
     # Removed __init__ method
@@ -753,9 +750,10 @@ class Router:
         await self.request_callback_handler(method_handler, request)
 ```
 
-`self.response_writer` and `self.request_callback_handler`, both are implemented in super class, let's asusme like this, so `Router` is calling a method that is implemented in a class that extended her, it basicly means that `Router` is a mixin class.
+`self.response_writer` and `self.request_callback_handler` are both implemented in the superclass. 
+In this case, `Router` is calling a method that is implemented in a class that extends it, which essentially makes `Router` a mixin class.
 
-So, let's test by sending a simple POST Request to a route that don't exists in our project:
+Now, let's test this by sending a simple POST request to a route that doesn't exist in our project:
 
 ```bash
 curl -X POST -H "Content-Type: application/json" -d '{"key1": "value1", "key2": "value2"}' http://127.0.0.1:8080/not_created
@@ -765,6 +763,8 @@ And your response should be:
 ```json
 {"message": "Not Found"}
 ```
+
+And that's it! Now you have your own simple Python framework. I hope this guide helped you understand how this type of framework works under the hood.
 
 
 
