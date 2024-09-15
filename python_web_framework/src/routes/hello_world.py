@@ -1,6 +1,6 @@
-from python_web_framework.src.request import Request
 from python_web_framework.src.response import Response
-from python_web_framework.src.server import Server
+from python_web_framework.src.request import Request
+from python_web_framework.src.server.main import Server
 
 
 def hello_world_app(server: Server):
