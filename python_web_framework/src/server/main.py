@@ -42,16 +42,16 @@ class Server(asyncio.Protocol, Router):
         request = Request(
             method=self._request_parser.get_method().decode('utf-8'),
             url=self.url,
-            body=json.loads(self.body),
+            body=json.loads(self.body) if self.body else None,
         )
         self.loop.create_task(self.dispatch(request))
 
     def add_route(self, path: str, methods_handler: dict):
         self.add(path, methods_handler)
 
-    async def request_callback_handler(self, method, request):
+    async def request_callback_handler(self, method, request, **kwargs):
         try:
-            resp = await method(request)
+            resp = await method(request, **kwargs)
         except Exception as exc:
             resp = format_exception(exc)
 

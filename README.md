@@ -764,6 +764,205 @@ And your response should be:
 {"message": "Not Found"}
 ```
 
+## Handling Dynamic URL's
+
+But one thing, that's something in web development, is to handle dynamic URL's, and what can i want to talk? it's that it's normal to have this kind of URL
+```bash
+/users/{id}
+```
+
+and then we send a 
+```bash 
+GET /users/123456
+```
+
+and we need to be able to handle this id as a parameter, for example
+
+```python
+    async def process_dynamic_url(request: Request, name: str):
+        try:
+            return Response(
+                200,
+                {
+                    'msg': f'Hello {name}'
+                }
+            )
+        except Exception as e:
+            print(e)
+
+    server.add_route("/hello_world/{name}", {
+        "GET": process_dynamic_url
+    })
+```
+
+And you should start to thing "this is so complex, it might have some awesome business logic to implement it", and TCHARAM, this can be achieve by implementing regex on our `Router` class
+
+First, let's understand how regex works and how this can be achieved, we have two strings `"/users/{id}/"` and `"/users/12345/"`, let's make a prototype:
+```python
+import re
+match = re.match(r'/users/(.+?)/', "/users/123/")
+match.groups()
+"""
+Should return:
+('123',)
+"""
+```
+A simple dive into `r'/users/(.+?)/'`:
+- `()` this means that whatever matches the pattern inside the parentheses will be captured and stored
+- `.` this means any character except a newline
+- `+` this quantifier matches one or more of the preceding token
+- `?` which means it will match as many characters as possible
+
+But, there's a better way to deal with this regex, currently we have a feature called "groups", that makes us be able to use a 
+`groupdict()` method and got an dict as 
+```json
+{
+  "id": "123"
+}
+```
+and this help us a lot! since with this JSON we can be able to desconstruct the JSON with `**` and pass as kwargs into our methods/router/controller!
+our boilerplate will be `(?P<id>.+?)`, and let's make a brief dive into this regex!
+- `(?P<id>...)` makes us match the code as `id` into our JSON, just like we want
+- `.+?` makes us match one or more of character except a newline
+
+```python
+import re
+
+match = re.match(r'^/users/(?P<id>[^/]+?)/$', "/users/123/")
+match.groupdict()
+"""
+Our response should look like this:
+{'id': '123'}
+"""
+```
+
+And i know, now you're problably "oh god" after see this regex, but i'll try make the easiest that i can do!
+
+`^/users/(?P<id>[^/]+?)/$`
+- `^` means that's the begging of the string, meaning that cannot has any character before `/users`
+- `$` means like the same, but cannot has any other character after `/(?P<id>[^/]+?)/`
+- `(?P<id>...)` means that all match that has in this part of the regex will be matched as group `id` as we can see `<id>`
+- `[^/]+?` means that we want to match one or more characters, except new lines and slash (`/`) 
+
+So, now we got it! we need to be able to pass something like `/users/{id}` and get a regex pre-compiled as `^/users/(?P<id>[^/]+?)/$`.
+
+So let's comeback to our `Router` class, and we have this `add` method that will be responsible for get the URL and the method should be executed:
+
+```python
+    def add(self, path, methods_handler):
+        self.mapping[path] = methods_handler
+```
+
+Now our dict need to has our converted URL, and not the original URL, let's start by creating a method that will convert those URL's for us:
+```python
+    def parse_dynamic_url(self, url):
+        leading_slash = url.startswith('/')
+        trailing_slash = url.endswith('/')
+        url = url.strip('/')
+
+        pattern = re.compile(r"{(.*?)}")
+
+        url_path = [
+            pattern.sub(lambda m: f"(?P<{m.group(1)}>[^/]+?)", part)
+            for part in url.split('/') if part
+        ]
+
+        path = '/' + '/'.join(url_path) if leading_slash else '/'.join(url_path)
+        if trailing_slash and not path.endswith('/'):
+            path += '/'
+
+        return f"^{path}$"
+```
+
+Let's start by `pattern = re.compile(r"{(.*?)}")` this piece of code will make a regex already compiled to match for path in the URL that sould be dynamic!
+For example `/users/{id}` or `/book/{name}`, we need to be able to now that has a dynamic input between `{}`, and this is the purpose of it!
+
+```python
+url_path = [
+    pattern.sub(lambda m: f"(?P<{m.group(1)}>[^/]+?)", part)
+    for part in url.split('/') if part
+]
+```
+
+will split by slash (`/`) our URL in piece and if there's a part of the URL that match with our regex, it will be converted to our boilerplate!
+for example `/book/{name}/action/{author}` -> `/book/(?P<name>[^/]+?)/action/(?P<author>[^/]+?)`
+
+Now, the last part:
+```python
+def parse_dynamic_url(self, url):
+        leading_slash = url.startswith('/')
+        trailing_slash = url.endswith('/')
+        ...
+        path = '/' + '/'.join(url_path) if leading_slash else '/'.join(url_path)
+        if trailing_slash and not path.endswith('/'):
+            path += '/'
+
+        return f"^{path}$"
+```
+
+it basicly add slash in the begging or in the end back if you did it 
+- `/book/{name}/action/{author}` -> `^/book/(?P<name>[^/]+?)/action/(?P<author>[^/]+?)$`
+- `/book/{name}/action/{author}/` -> `^/book/(?P<name>[^/]+?)/action/(?P<author>[^/]+?)/$`
+- `book/{name}/action/{author}/` -> `^book/(?P<name>[^/]+?)/action/(?P<author>[^/]+?)/$`
+
+I hardly suggest you debug and test this method by your own, it will makes more sense when you see it working.
+
+Now that we have method to convert our path into a regex pre-compiled, we have to refactor `add` method:
+```python
+    def add(self, path, methods_handler):
+        self.mapping[self.parse_dynamic_url(path)] = methods_handler
+```
+
+On our `dispatch` method, we need to handle the request and iterate over our mapping array with our endpoints and match them with our regex, if not matched, we move for the next on unless we find it ou return for the client an `404` not found. 
+```python
+    async def dispatch(self, request: Request):
+        # Iterate through the compiled patterns
+        for url, pattern in self.mapping.items():
+            match = re.match(url, request.url)
+            if not match:
+                continue
+    
+            params = match.groupdict()
+            handler = self.mapping[url].get(request.method)
+    
+            if handler:
+                await self.request_callback_handler(handler, request, **params)
+                return
+        # Handle 404 Not Found if no matching route or method is found
+        await self.response_writer(
+            Response(
+                404,
+                {'message': 'Not Found'}
+            )
+        )
+```
+Since matched with our regex, we can use `match.groupdict()` to get an dict back with our groups! and them pass with kwargs into our route.
+
+And, that's it! Now we just need to add a new route into our hello_world file (`python_web_framework/src/routes/hello_world.py`)
+
+```python
+    async def process_dynamic_url(request: Request, name: str):
+        try:
+            return Response(
+                200,
+                {
+                    'msg': f'Hello {name}'
+                }
+            )
+        except Exception as e:
+            print(e)
+    
+    server.add_route("/hello_world/{name}", {
+        "GET": process_dynamic_url
+    })
+```
+
+With our new route done, we can test on our terminal with:
+```bash
+curl -X GET http://127.0.0.1:8080/hello_world/Gabs
+{"msg": "Hello Gabs"}
+```
+
 And that's it! Now you have your own simple Python framework. I hope this guide helped you understand how this type of framework works under the hood.
 
 

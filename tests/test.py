@@ -24,8 +24,9 @@ def parse_dynamic_url(url):
     return path
 
 
-
-url = parse_dynamic_url("/users/{id}/")
+match = re.match(r'^/users/(?P<id>[^/]+?)/$', "/users/123/")
+match.groupdict()
+url = parse_dynamic_url("/book/{name}/action/{author}")
 # expression = r"\A%s\Z" % url
 expression = r"^%s$" % url
 teste = re.compile(expression, re.DOTALL)

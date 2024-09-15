@@ -23,7 +23,22 @@ def hello_world_app(server: Server):
             }
         )
 
+    async def process_dynamic_url(request: Request, name: str):
+        try:
+            return Response(
+                200,
+                {
+                    'msg': f'Hello {name}'
+                }
+            )
+        except Exception as e:
+            print(e)
+
     server.add_route("/hello_world", {
         "GET": hello_world,
         "POST": process_request
+    })
+
+    server.add_route("/hello_world/{name}", {
+        "GET": process_dynamic_url
     })
