@@ -766,18 +766,17 @@ And your response should be:
 
 ## Handling Dynamic URL's
 
-But one thing, that's something in web development, is to handle dynamic URL's, and what can i want to talk? it's that it's normal to have this kind of URL
+One important aspect of web development is handling dynamic URLs, and what I want to say is that it's normal to have these kinds of URLs.
 ```bash
 /users/{id}
 ```
 
-and then we send a 
+And then, we send a request like:
 ```bash 
 GET /users/123456
 ```
 
-and we need to be able to handle this id as a parameter, for example
-
+And we need to be able to handle this ID as a parameter, for example:
 ```python
     async def process_dynamic_url(request: Request, name: str):
         try:
@@ -795,9 +794,8 @@ and we need to be able to handle this id as a parameter, for example
     })
 ```
 
-And you should start to thing "this is so complex, it might have some awesome business logic to implement it", and TCHARAM, this can be achieve by implementing regex on our `Router` class
-
-First, let's understand how regex works and how this can be achieved, we have two strings `"/users/{id}/"` and `"/users/12345/"`, let's make a prototype:
+And you might start to think, 'This is so complex; there must be some sophisticated business logic to implement it.' And voilà, this can be achieved by using regex in our `Router` class.
+First, let's understand how regex works and how this can be achieved. We have two strings `"/users/{id}/"` and `"/users/12345/"`. Let's create a prototype:
 ```python
 import re
 match = re.match(r'/users/(.+?)/', "/users/123/")
@@ -808,22 +806,21 @@ Should return:
 """
 ```
 A simple dive into `r'/users/(.+?)/'`:
-- `()` this means that whatever matches the pattern inside the parentheses will be captured and stored
-- `.` this means any character except a newline
-- `+` this quantifier matches one or more of the preceding token
-- `?` which means it will match as many characters as possible
+- `()` Captures and stores whatever matches the pattern inside the parentheses.
+- `.` Matches any character except a newline
+- `+` A quantifier that matches one or more of the preceding token
+- `?` Matches as few characters as possible (non-greedy match)."
 
-But, there's a better way to deal with this regex, currently we have a feature called "groups", that makes us be able to use a 
-`groupdict()` method and got an dict as 
+But there's a better way to handle this regex. We have a feature called 'groups' that allows us to use the `groupdict()` method to get a dictionary. 
 ```json
 {
   "id": "123"
 }
 ```
-and this help us a lot! since with this JSON we can be able to desconstruct the JSON with `**` and pass as kwargs into our methods/router/controller!
-our boilerplate will be `(?P<id>.+?)`, and let's make a brief dive into this regex!
-- `(?P<id>...)` makes us match the code as `id` into our JSON, just like we want
-- `.+?` makes us match one or more of character except a newline
+And this helps us a lot! With this dictionary, we can deconstruct it using `**` and pass it as keyword arguments into our methods, routers, or controllers. 
+Our new regex pattern will be (?P<id>.+?). Let's take a brief dive into this regex!
+- `(?P<id>...)` Captures the matched content as id in our dictionary, just as we want.
+- `.+?` Matches one or more characters, except for a newline, using a non-greedy approach.
 
 ```python
 import re
@@ -836,24 +833,24 @@ Our response should look like this:
 """
 ```
 
-And i know, now you're problably "oh god" after see this regex, but i'll try make the easiest that i can do!
+And I know, you're probably thinking 'Oh god' after seeing this regex, but I'll try to make it as simple as I can!
 
 `^/users/(?P<id>[^/]+?)/$`
-- `^` means that's the begging of the string, meaning that cannot has any character before `/users`
-- `$` means like the same, but cannot has any other character after `/(?P<id>[^/]+?)/`
-- `(?P<id>...)` means that all match that has in this part of the regex will be matched as group `id` as we can see `<id>`
-- `[^/]+?` means that we want to match one or more characters, except new lines and slash (`/`) 
+- `^` Indicates the beginning of the string, meaning no characters can appear before `/users`
+- `$` Indicates the end of the string, meaning no characters can appear after `/(?P<id>[^/]+?)/`
+- `(?P<id>...)` Matches anything within this part of the regex and captures it as the group id, which we can reference as `<id>`.
+- `[^/]+?` Matches one or more characters except for newlines and the slash `(/)`, in a non-greedy manner. 
 
-So, now we got it! we need to be able to pass something like `/users/{id}` and get a regex pre-compiled as `^/users/(?P<id>[^/]+?)/$`.
+So now we get it! We need to be able to pass something like `/users/{id}` and have it pre-compiled as the regex `^/users/(?P<id>[^/]+?)/$`.
 
-So let's comeback to our `Router` class, and we have this `add` method that will be responsible for get the URL and the method should be executed:
+Now, let's return to our Router class. We have an add method that will be responsible for receiving the URL and determining which method should be executed.
 
 ```python
     def add(self, path, methods_handler):
         self.mapping[path] = methods_handler
 ```
 
-Now our dict need to has our converted URL, and not the original URL, let's start by creating a method that will convert those URL's for us:
+Now, our dictionary needs to have the converted URL, not the original one. Let's start by creating a method that will convert these URLs for us.
 ```python
     def parse_dynamic_url(self, url):
         leading_slash = url.startswith('/')
@@ -874,8 +871,9 @@ Now our dict need to has our converted URL, and not the original URL, let's star
         return f"^{path}$"
 ```
 
-Let's start by `pattern = re.compile(r"{(.*?)}")` this piece of code will make a regex already compiled to match for path in the URL that sould be dynamic!
-For example `/users/{id}` or `/book/{name}`, we need to be able to now that has a dynamic input between `{}`, and this is the purpose of it!
+Let's start with `pattern = re.compile(r"{(.*?)}")`. This code compiles a regex pattern to match any dynamic parts of the URL that should be variable.
+
+For example, with URLs like `/users/{id}` or `/book/{name}`, we need to recognize that there is dynamic input between the `{}` brackets, and this regex helps us identify it.
 
 ```python
 url_path = [
@@ -884,10 +882,11 @@ url_path = [
 ]
 ```
 
-will split by slash (`/`) our URL in piece and if there's a part of the URL that match with our regex, it will be converted to our boilerplate!
-for example `/book/{name}/action/{author}` -> `/book/(?P<name>[^/]+?)/action/(?P<author>[^/]+?)`
+We'll split our URL into pieces by the slash (`/`). If any part of the URL matches our regex, it will be converted into our boilerplate format.
 
-Now, the last part:
+For example, `/book/{name}/action/{author}` would be transformed into `/book/(?P<name>[^/]+?)/action/(?P<author>[^/]+?)`.
+
+Now, for the last part:
 ```python
 def parse_dynamic_url(self, url):
         leading_slash = url.startswith('/')
@@ -900,20 +899,21 @@ def parse_dynamic_url(self, url):
         return f"^{path}$"
 ```
 
-it basicly add slash in the begging or in the end back if you did it 
+It basically adds a slash at the beginning or the end, if it was originally there. 
 - `/book/{name}/action/{author}` -> `^/book/(?P<name>[^/]+?)/action/(?P<author>[^/]+?)$`
 - `/book/{name}/action/{author}/` -> `^/book/(?P<name>[^/]+?)/action/(?P<author>[^/]+?)/$`
 - `book/{name}/action/{author}/` -> `^book/(?P<name>[^/]+?)/action/(?P<author>[^/]+?)/$`
 
-I hardly suggest you debug and test this method by your own, it will makes more sense when you see it working.
+I highly suggest you debug and test this method on your own, it will make more sense when you see it working.
 
-Now that we have method to convert our path into a regex pre-compiled, we have to refactor `add` method:
+Now that we have a method to convert our path into a pre-compiled regex, we need to refactor the `add` method.
 ```python
     def add(self, path, methods_handler):
         self.mapping[self.parse_dynamic_url(path)] = methods_handler
 ```
 
-On our `dispatch` method, we need to handle the request and iterate over our mapping array with our endpoints and match them with our regex, if not matched, we move for the next on unless we find it ou return for the client an `404` not found. 
+In our `dispatch` method, we need to handle the request by iterating over our mapping array of endpoints and matching each one with our regex. 
+If there's no match, we move to the next endpoint until we find a match or return a `404 Not Found` to the client. 
 ```python
     async def dispatch(self, request: Request):
         # Iterate through the compiled patterns
@@ -936,9 +936,9 @@ On our `dispatch` method, we need to handle the request and iterate over our map
             )
         )
 ```
-Since matched with our regex, we can use `match.groupdict()` to get an dict back with our groups! and them pass with kwargs into our route.
+Once a match is found with our regex, we can use `match.groupdict()` to get a dictionary with our captured groups. Then, we pass it as keyword arguments (`kwargs`) into our route.
 
-And, that's it! Now we just need to add a new route into our hello_world file (`python_web_framework/src/routes/hello_world.py`)
+And that's it! Now, we just need to add a new route to our `hello_world` file `(python_web_framework/src/routes/hello_world.py)`.
 
 ```python
     async def process_dynamic_url(request: Request, name: str):
@@ -957,7 +957,7 @@ And, that's it! Now we just need to add a new route into our hello_world file (`
     })
 ```
 
-With our new route done, we can test on our terminal with:
+With our new route created, we can test it in our terminal with:
 ```bash
 curl -X GET http://127.0.0.1:8080/hello_world/Gabs
 {"msg": "Hello Gabs"}
