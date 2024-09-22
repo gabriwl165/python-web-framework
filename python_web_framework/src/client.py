@@ -2,14 +2,14 @@ import asyncio
 import json
 
 
-async def main():
+async def send_get():
     message = 'GET /hello_world HTTP/1.1\r\nHost: example.com\r\n\r\n'
     reader, writer = await asyncio.open_connection('127.0.0.1', 8080)
 
     print(f'Send: {message}')
     writer.write(message.encode())
 
-    data = await reader.read(100)
+    data = await reader.read(900)
     print(f'Received: {data.decode()}')
 
     print('Close the connection')
@@ -19,7 +19,7 @@ async def main():
 
 async def send_post():
     message_template = (
-        'POST /hello_world HTTP/1.1\r\n'
+        'PUT /hello_world HTTP/1.1\r\n'
         'Host: example.com\r\n'
         'Content-Type: application/json\r\n'
         'Content-Length: {}\r\n'
@@ -48,6 +48,7 @@ async def send_post():
     # Close the connection
     writer.close()
     await writer.wait_closed()
+
 
 if __name__ == "__main__":
     asyncio.run(send_post())
