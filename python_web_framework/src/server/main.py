@@ -1,7 +1,7 @@
 import asyncio
 import json
 from traceback import format_exception
-from typing import Optional
+from typing import Optional, Callable
 
 from httptools import HttpRequestParser
 
@@ -12,13 +12,14 @@ from python_web_framework.src.response import Response
 
 class Server(asyncio.Protocol, Router):
     def __init__(self, loop=None):
-        self.mapping = {}
+        self.mapping = []
         self.loop = loop or asyncio.get_event_loop()
         self.encoding = "utf-8"
         self.url = None
         self.body = None
         self.transport: Optional[asyncio.Transport] = None
         self._request_parser = HttpRequestParser(self)
+
     def connection_made(self, transport):
         self.transport = transport
 
@@ -46,16 +47,24 @@ class Server(asyncio.Protocol, Router):
         )
         self.loop.create_task(self.dispatch(request))
 
-    def add_route(self, path: str, methods_handler: dict):
-        self.add(path, methods_handler)
+    def add_route(self, path: str, method: str, handler: Callable):
+        self.add(path, method, handler)
 
     async def request_callback_handler(self, method, request, **kwargs):
         try:
-            resp = await method(request, **kwargs)
-        except Exception as exc:
-            resp = format_exception(exc)
+            try:
+                resp = await method(request, **kwargs)
+            except Exception as exc:
+                resp = format_exception(exc)
 
-        if not isinstance(resp, Response):
-            raise RuntimeError(f"expect Response instance but got {type(resp)}")
+            if not isinstance(resp, Response):
+                raise RuntimeError(f"expect Response instance but got {type(resp)}")
 
-        self.response_writer(resp)
+            self.response_writer(resp)
+        except Exception as _:
+            self.response_writer(Response(
+                500,
+                {
+                    'message': "Unexpected error"
+                }
+            ))

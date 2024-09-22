@@ -1,4 +1,6 @@
 import re
+from typing import Callable
+
 from request import Request
 from response import Response
 
@@ -23,22 +25,22 @@ class Router:
 
         return f"^{path}$"
 
-    def add(self, path, methods_handler):
-        self.mapping[self.parse_dynamic_url(path)] = methods_handler
+    def add(self, path: str, method: str, handler: Callable):
+        self.mapping.append((self.parse_dynamic_url(path), method, handler))
 
     async def dispatch(self, request: Request):
         # Iterate through the compiled patterns
-        for url, pattern in self.mapping.items():
-            match = re.match(url, request.url)
-            if not match:
-                continue
-
-            params = match.groupdict()
-            handler = self.mapping[url].get(request.method)
-
-            if handler:
-                await self.request_callback_handler(handler, request, **params)
-                return
+        handler = [
+            (handler, re.match(path, request.url))
+            for path, method, handler in self.mapping
+            if re.match(path, request.url) and
+               method == request.method
+        ]
+        handle, match = handler[0]
+        params = match.groupdict()
+        if handler:
+            await self.request_callback_handler(handle, request, **params)
+            return
 
         # Handle 404 Not Found if no matching route or method is found
         await self.response_writer(
