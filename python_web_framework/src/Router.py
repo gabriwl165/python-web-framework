@@ -36,7 +36,18 @@ class Router:
             if re.match(path, request.url) and
                method == request.method
         ]
+
+        if not handler:
+            await self.response_writer(
+                Response(
+                    404,
+                    {'message': 'Not Found'}
+                )
+            )
+            return
+
         handle, match = handler[0]
+
         params = match.groupdict()
         if handler:
             await self.request_callback_handler(handle, request, **params)
