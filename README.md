@@ -963,6 +963,296 @@ curl -X GET http://127.0.0.1:8080/hello_world/Gabs
 {"msg": "Hello Gabs"}
 ```
 
+## Let's make some refactors
+
+When we're building a route, we come across with som boiler plates, like this:
+```python
+def hello_world_app(server: Server):
+    async def hello_world(request: Request):
+        print(f"Handle: {request.method} {request.url} {request.body}")
+
+    server.add_route("/hello_world", {"GET": hello_world})
+```
+
+But, nowadays, this is not the standard for many framework that provide routing system for us, like FastAPI:
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/")
+def read_root():
+    return {"message": "Hello, World!"}
+```
+
+So, what can we do to improve our library? Maybe provide an object that provide us @Get, @Post, @Put like all other framework, instead of `server.add_route("/hello_world", {"GET": hello_world})`, that we used to do before, so let's begin!
+
+First, out `main.py` should look like this:
+```python
+from python_web_framework.src.app import App
+from routes.hello_world import hello_world_app
+
+app = App()
+
+
+if __name__ == "__main__":
+    hello_world_app(app)
+    app.start('127.0.0.1', 8080)
+```
+
+What we can do to make this happen? let's begin from building our App class:
+First, we need to create our constructor, it will instantiate all objects that is necessary
+```python
+class App:
+    def __init__(self):
+        self.loop = asyncio.get_event_loop()
+        self.server = Server(self.loop)
+        self.socket = None
+```
+
+- `self.loop` will handle the current loop in our process from asyncio
+- `self.server` will handle our `Server` class that we've built
+- `self.socket` will handle our binding into the operational system 
+
+So, with all this attributes instantiate, we can start build our decorators, let's from a simple `POST`, because the rest will be the same boiler plate
+
+```python
+class App:
+    def __init__(self):
+        self.loop = asyncio.get_event_loop()
+        self.server = Server(self.loop)
+        self.socket = None
+
+    def post(self, path):
+        def decorator(func):
+            self.server.add_route(path, "POST", func)
+            return func
+        return decorator
+```
+
+Basically, our `post` method return another method, that we can call it for `decorator`, `wrapper`, there's many ways to call it.
+Our self.server.add_route is doing all the jobs though, so let's dive into what our `Server` class is doing!
+
+Our `add_route` is going to look like this:
+```python
+    def add_route(self, path: str, methods_handler: dict):
+        self.add(path, methods_handler)
+```
+
+But now we need to add the HTTP Status also (e.g. POST, GET, PUT, etc), so let's make like this:
+```python
+    def add_route(self, path: str, method: str, handler: Callable):
+        self.add(path, method, handler)
+```
+
+But this little change affect our `Router` class, so we need to make some refactors there too.
+The fist change is going to be our `add` method, that look like this:
+```python
+    def add(self, path, methods_handler):
+        self.mapping[self.parse_dynamic_url(path)] = methods_handler
+```
+
+Let's change it from a dict to a list of sets, since now we need to match the URL + HTTP method, dict will not help us so much.
+```python
+    def add(self, path: str, method: str, handler: Callable):
+        self.mapping.append((self.parse_dynamic_url(path), method, handler))
+```
+But, change it from a dict to a list will impact that we need to change our `Server` class, that used to look like this:
+```python
+class Server(asyncio.Protocol, Router):
+    def __init__(self, loop=None):
+        self.mapping = {}
+        self.loop = loop or asyncio.get_event_loop()
+        self.encoding = "utf-8"
+        self.url = None
+        self.body = None
+        self.transport: Optional[asyncio.Transport] = None
+        self._request_parser = HttpRequestParser(self)
+```
+
+To it
+```python
+class Server(asyncio.Protocol, Router):
+    def __init__(self, loop=None):
+        self.mapping = []
+        self.loop = loop or asyncio.get_event_loop()
+        self.encoding = "utf-8"
+        self.url = None
+        self.body = None
+        self.transport: Optional[asyncio.Transport] = None
+        self._request_parser = HttpRequestParser(self)
+```
+
+So, let's go back to our `Router` class, because we didnt finished yet. Our `dispatch` method that used to look like this:
+```python
+    async def dispatch(self, request: Request):
+        # Iterate through the compiled patterns
+        for url, pattern in self.mapping.items():
+            match = re.match(url, request.url)
+            if not match:
+                continue
+
+            params = match.groupdict()
+            handler = self.mapping[url].get(request.method)
+
+            if handler:
+                await self.request_callback_handler(handler, request, **params)
+                return
+
+        # Handle 404 Not Found if no matching route or method is found
+        await self.response_writer(
+            Response(
+                404,
+                {'message': 'Not Found'}
+            )
+        )
+```
+
+Since now our `mapping` it's a list, not a dict anymore, the follow code will not work anymore:
+```python
+    for url, pattern in self.mapping.items():
+                match = re.match(url, request.url)
+                if not match:
+                    continue
+    
+                params = match.groupdict()
+                handler = self.mapping[url].get(request.method)
+    
+                if handler:
+                    await self.request_callback_handler(handler, request, **params)
+                    return
+```
+
+So, one the way to deal with this problem, since we have the `request: Request` it's:
+```python
+    handler = [
+        (handler, re.match(path, request.url))
+        for path, method, handler in self.mapping
+        if re.match(path, request.url) and
+           method == request.method
+    ]
+```
+
+`self.mapping` likely contains a list of tuples. Each tuple represents a route and consists of three elements
+- `path` (the URL pattern),
+- `method` (the HTTP method like GET, POST),
+- `handler` (the function or class that will handle the request if the route matches)
+- `request.url` is the URL of the incoming HTTP request.
+- `request.method` is the HTTP method of the incoming request (e.g., GET, POST).
+- `re.match()` is a regular expression function used to check if a URL matches a specific pattern, since our `add` method makes a `self.parse_dynamic_url` before add inside the list.
+
+With `handler` we can know if there is a route with this pattern, so we can check after the list comprehension and response if not found:
+
+```python
+    if not handler:
+        await self.response_writer(
+            Response(
+                404,
+                {'message': 'Not Found'}
+            )
+        )
+        return
+```
+
+If is everything OK, we can pass the request to our `request_callback_handler` from `Server`, that we're going to refactor also:
+
+```python
+    handle, match = handler[0]
+    params = match.groupdict()
+    if handler:
+        await self.request_callback_handler(handle, request, **params)
+        return
+```
+
+Back to our `Server` class, we need to make some adjust in `request_callback_handler` 
+Our method used to look like this:
+```python
+    async def request_callback_handler(self, method, request, **kwargs):
+        try:
+            resp = await method(request, **kwargs)
+        except Exception as exc:
+            resp = format_exception(exc)
+
+        if not isinstance(resp, Response):
+            raise RuntimeError(f"expect Response instance but got {type(resp)}")
+
+        self.response_writer(resp)
+```
+
+But i encounter a problem, if `format_exception(exc)` had some exception, we weren't handling it, making our socket to still connect and never relase the connection, so, we need to add another try/catch to handle it
+
+```python
+    async def request_callback_handler(self, method, request, **kwargs):
+        try:
+            try:
+                resp = await method(request, **kwargs)
+            except Exception as exc:
+                resp = format_exception(exc)
+
+            if not isinstance(resp, Response):
+                raise RuntimeError(f"expect Response instance but got {type(resp)}")
+
+            self.response_writer(resp)
+        except Exception as _:
+            self.response_writer(Response(
+                500,
+                {
+                    'message': "Unexpected error"
+                }
+            ))
+```
+
+So, basically, we've refactored our `Server` and `Router` class to handle this new approach.
+
+Back to our `App` class, we can add another decorator to handle another kind of HTTP methods:
+```python
+class App:
+    def __init__(self):
+        self.loop = asyncio.get_event_loop()
+        self.server = Server(self.loop)
+        self.socket = None
+
+    def get(self, path):
+        def decorator(func):
+            self.server.add_route(path, "GET", func)
+            return func
+        return decorator
+
+    def post(self, path):
+        def decorator(func):
+            self.server.add_route(path, "POST", func)
+            return func
+        return decorator
+
+    def put(self, path):
+        def decorator(func):
+            self.server.add_route(path, "PUT", func)
+            return func
+        return decorator
+```
+
+With all of it done, there is just one last thing, how can we do to make this true? `app.start('127.0.0.1', 8080)`
+
+We just need to extract the old code that used to look like this:
+```python
+    server = loop.run_until_complete(
+        loop.create_server(lambda: protocol, host='127.0.0.1', port=8080)
+    )
+    loop.run_until_complete(server.serve_forever())
+```
+
+To inside our method that can be called `start`
+```python
+
+    def start(self, host, port):
+        self.socket = self.loop.run_until_complete(
+            self.loop.create_server(lambda: self.server, host=host, port=port)
+        )
+        print(f"Server started on {host}:{port}")
+        self.loop.run_until_complete(self.socket.serve_forever())
+```
+ And that it's, we've refactored our framework to look like more with a standard industry that we've seen
+
 And that's it! Now you have your own simple Python framework. I hope this guide helped you understand how this type of framework works under the hood.
 
 
