@@ -19,6 +19,7 @@ class Server(asyncio.Protocol, Router):
         self.body = None
         self.transport: Optional[asyncio.Transport] = None
         self.middlewares = []
+        self.headers = {}
         self._request_parser = HttpRequestParser(self)
 
     def connection_made(self, transport):
@@ -40,11 +41,18 @@ class Server(asyncio.Protocol, Router):
     def on_url(self, url):
         self.url = url.decode('utf-8')
 
+    def on_header(self, name, value):
+        self.headers[name.decode('utf-8')] = value.decode('utf-8')
+
+    def on_headers_complete(self):
+        pass
+
     def on_message_complete(self):
         request = Request(
             method=self._request_parser.get_method().decode('utf-8'),
             url=self.url,
             body=json.loads(self.body) if self.body else None,
+            headers=self.headers
         )
         self.loop.create_task(self.dispatch(request))
 
@@ -59,7 +67,7 @@ class Server(asyncio.Protocol, Router):
 
                 resp = await method(request, **kwargs)
             except Exception as exc:
-                resp = format_exception(exc)
+                resp = format_exception(type(exc), exc, exc.__traceback__)
 
             if not isinstance(resp, Response):
                 raise RuntimeError(f"expect Response instance but got {type(resp)}")
