@@ -27,6 +27,13 @@ class App:
             return func
         return decorator
 
+    def middleware(self):
+        def decorator(func):
+            self.server.middlewares.append(func)
+            return func
+
+        return decorator
+
     def start(self, host, port):
         self.socket = self.loop.run_until_complete(
             self.loop.create_server(lambda: self.server, host=host, port=port)

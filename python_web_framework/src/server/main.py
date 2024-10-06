@@ -18,6 +18,7 @@ class Server(asyncio.Protocol, Router):
         self.url = None
         self.body = None
         self.transport: Optional[asyncio.Transport] = None
+        self.middlewares = []
         self._request_parser = HttpRequestParser(self)
 
     def connection_made(self, transport):
@@ -53,6 +54,9 @@ class Server(asyncio.Protocol, Router):
     async def request_callback_handler(self, method, request, **kwargs):
         try:
             try:
+                for middleware in self.middlewares:
+                    await middleware(request)
+
                 resp = await method(request, **kwargs)
             except Exception as exc:
                 resp = format_exception(exc)
