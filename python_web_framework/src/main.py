@@ -17,8 +17,11 @@ async def add_logger(request: Request):
 
 @app.middleware()
 async def add_security(request: Request):
-    if request.url not in [""]:
-        raise Exception("No permission")
+    if request.url in ["/login"]:
+        return
+    if not request.headers.get('Authorization', None):
+        raise Exception("Missing authorization")
+
 
 
 if __name__ == "__main__":

@@ -67,7 +67,9 @@ class Server(asyncio.Protocol, Router):
 
                 resp = await method(request, **kwargs)
             except Exception as exc:
-                resp = format_exception(type(exc), exc, exc.__traceback__)
+                resp = Response(400, {
+                    "message": str(exc)
+                })
 
             if not isinstance(resp, Response):
                 raise RuntimeError(f"expect Response instance but got {type(resp)}")
