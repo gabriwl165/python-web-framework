@@ -965,7 +965,7 @@ curl -X GET http://127.0.0.1:8080/hello_world/Gabs
 
 ## Let's make some refactors
 
-When we're building a route, we come across with som boiler plates, like this:
+When building a route, we encounter some boilerplate code, like this:
 ```python
 def hello_world_app(server: Server):
     async def hello_world(request: Request):
@@ -974,7 +974,7 @@ def hello_world_app(server: Server):
     server.add_route("/hello_world", {"GET": hello_world})
 ```
 
-But, nowadays, this is not the standard for many framework that provide routing system for us, like FastAPI:
+However, this is no longer the standard for many frameworks that provide routing systems, like FastAPI:
 ```python
 from fastapi import FastAPI
 
@@ -985,9 +985,10 @@ def read_root():
     return {"message": "Hello, World!"}
 ```
 
-So, what can we do to improve our library? Maybe provide an object that provide us @Get, @Post, @Put like all other framework, instead of `server.add_route("/hello_world", {"GET": hello_world})`, that we used to do before, so let's begin!
+So, how can we improve our library? Perhaps we could provide an object that offers decorators like `@get`, `@post`, and `@put`, similar to other frameworks, instead of using `server.add_route("/hello_world", {"GET": hello_world})` as we did before. 
+Let's get started!
 
-First, out `main.py` should look like this:
+First, our `main.py` should look like this:
 ```python
 from python_web_framework.src.app import App
 from routes.hello_world import hello_world_app
@@ -1000,8 +1001,8 @@ if __name__ == "__main__":
     app.start('127.0.0.1', 8080)
 ```
 
-What we can do to make this happen? let's begin from building our App class:
-First, we need to create our constructor, it will instantiate all objects that is necessary
+What can we do to make this happen? Let's start by building our `App` class.
+First, we need to create our constructor, which will instantiate all the necessary objects.
 ```python
 class App:
     def __init__(self):
@@ -1014,7 +1015,7 @@ class App:
 - `self.server` will handle our `Server` class that we've built
 - `self.socket` will handle our binding into the operational system 
 
-So, with all this attributes instantiate, we can start build our decorators, let's from a simple `POST`, because the rest will be the same boiler plate
+So, with all these attributes instantiated, we can start building our decorators. Let's begin with a simple `POST` decorator, as the rest will follow the same boilerplate.
 
 ```python
 class App:
@@ -1030,34 +1031,34 @@ class App:
         return decorator
 ```
 
-Basically, our `post` method return another method, that we can call it for `decorator`, `wrapper`, there's many ways to call it.
-Our self.server.add_route is doing all the jobs though, so let's dive into what our `Server` class is doing!
+Basically, our `post` method returns another method, which we can refer to as a `decorator` or `wrapper`; there are many ways to name it.
+Our `self.server.add_route` is handling all the work, so let's dive into what our `Server` class is doing!
 
-Our `add_route` is going to look like this:
+Our `add_route` method will look like this:
 ```python
     def add_route(self, path: str, methods_handler: dict):
         self.add(path, methods_handler)
 ```
 
-But now we need to add the HTTP Status also (e.g. POST, GET, PUT, etc), so let's make like this:
+But now we need to include the HTTP methods as well (e.g., `POST`, `GET`, `PUT`, etc.), so let's do it like this:
 ```python
     def add_route(self, path: str, method: str, handler: Callable):
         self.add(path, method, handler)
 ```
 
-But this little change affect our `Router` class, so we need to make some refactors there too.
-The fist change is going to be our `add` method, that look like this:
+But this small change affects our `Router` class, so we need to refactor it as well.
+The first change will be in our `add` method, which looks like this:
 ```python
     def add(self, path, methods_handler):
         self.mapping[self.parse_dynamic_url(path)] = methods_handler
 ```
 
-Let's change it from a dict to a list of sets, since now we need to match the URL + HTTP method, dict will not help us so much.
+Let's change it from a dictionary to a list of sets, since we now need to match both the URL and the HTTP method, and a dictionary won't be as helpful.
 ```python
     def add(self, path: str, method: str, handler: Callable):
         self.mapping.append((self.parse_dynamic_url(path), method, handler))
 ```
-But, change it from a dict to a list will impact that we need to change our `Server` class, that used to look like this:
+However, changing it from a dictionary to a list will require modifications to our `Server` class, which used to look like this:
 ```python
 class Server(asyncio.Protocol, Router):
     def __init__(self, loop=None):
@@ -1083,7 +1084,7 @@ class Server(asyncio.Protocol, Router):
         self._request_parser = HttpRequestParser(self)
 ```
 
-So, let's go back to our `Router` class, because we didnt finished yet. Our `dispatch` method that used to look like this:
+Now, let's go back to our `Router` class, as we haven't finished yet. Our `dispatch` method, which used to look like this:
 ```python
     async def dispatch(self, request: Request):
         # Iterate through the compiled patterns
@@ -1108,7 +1109,7 @@ So, let's go back to our `Router` class, because we didnt finished yet. Our `dis
         )
 ```
 
-Since now our `mapping` it's a list, not a dict anymore, the follow code will not work anymore:
+Since our `mapping` is now a list, not a dictionary, the following code will no longer work:
 ```python
     for url, pattern in self.mapping.items():
                 match = re.match(url, request.url)
@@ -1123,7 +1124,7 @@ Since now our `mapping` it's a list, not a dict anymore, the follow code will no
                     return
 ```
 
-So, one the way to deal with this problem, since we have the `request: Request` it's:
+So, one way to deal with this problem, since we have the `request: Request`, is:
 ```python
     handler = [
         (handler, re.match(path, request.url))
@@ -1133,7 +1134,7 @@ So, one the way to deal with this problem, since we have the `request: Request` 
     ]
 ```
 
-`self.mapping` likely contains a list of tuples. Each tuple represents a route and consists of three elements
+`self.mapping` likely contains a list of tuples, where each tuple represents a route and consists of three elements.
 - `path` (the URL pattern),
 - `method` (the HTTP method like GET, POST),
 - `handler` (the function or class that will handle the request if the route matches)
@@ -1141,8 +1142,7 @@ So, one the way to deal with this problem, since we have the `request: Request` 
 - `request.method` is the HTTP method of the incoming request (e.g., GET, POST).
 - `re.match()` is a regular expression function used to check if a URL matches a specific pattern, since our `add` method makes a `self.parse_dynamic_url` before add inside the list.
 
-With `handler` we can know if there is a route with this pattern, so we can check after the list comprehension and response if not found:
-
+With `handler`, we can determine if there is a route matching this pattern. After the list comprehension, we can check and respond if no route is found.
 ```python
     if not handler:
         await self.response_writer(
@@ -1154,8 +1154,7 @@ With `handler` we can know if there is a route with this pattern, so we can chec
         return
 ```
 
-If is everything OK, we can pass the request to our `request_callback_handler` from `Server`, that we're going to refactor also:
-
+If everything is OK, we can pass the request to our `request_callback_handler` from the `Server` class, which we will also refactor.
 ```python
     handle, match = handler[0]
     params = match.groupdict()
@@ -1179,7 +1178,8 @@ Our method used to look like this:
         self.response_writer(resp)
 ```
 
-But i encounter a problem, if `format_exception(exc)` had some exception, we weren't handling it, making our socket to still connect and never relase the connection, so, we need to add another try/catch to handle it
+But I encountered a problem: if `format_exception(exc)` throws an exception, we aren't handling it, which causes the socket to stay connected and never release the connection. 
+Since covering all bugs is not the focus of this article, and we're simply showing the basic structure of a web framework, we can add another try/catch block to fix it.
 
 ```python
     async def request_callback_handler(self, method, request, **kwargs):
@@ -1202,9 +1202,9 @@ But i encounter a problem, if `format_exception(exc)` had some exception, we wer
             ))
 ```
 
-So, basically, we've refactored our `Server` and `Router` class to handle this new approach.
+So, basically, we've refactored our `Server` and `Router` classes to handle this new approach.
 
-Back to our `App` class, we can add another decorator to handle another kind of HTTP methods:
+Now, returning to our `App` class, we can add another decorator to handle different types of HTTP methods:
 ```python
 class App:
     def __init__(self):
@@ -1231,9 +1231,9 @@ class App:
         return decorator
 ```
 
-With all of it done, there is just one last thing, how can we do to make this true? `app.start('127.0.0.1', 8080)`
+With all of this done, there's just one last thing: how can we make this work? `app.start('127.0.0.1', 8080)`
 
-We just need to extract the old code that used to look like this:
+We just need to extract the old code, which used to look like this:
 ```python
     server = loop.run_until_complete(
         loop.create_server(lambda: protocol, host='127.0.0.1', port=8080)
@@ -1241,7 +1241,7 @@ We just need to extract the old code that used to look like this:
     loop.run_until_complete(server.serve_forever())
 ```
 
-To inside our method that can be called `start`
+Into a method that we can call `start`.
 ```python
 
     def start(self, host, port):
@@ -1251,7 +1251,75 @@ To inside our method that can be called `start`
         print(f"Server started on {host}:{port}")
         self.loop.run_until_complete(self.socket.serve_forever())
 ```
- And that it's, we've refactored our framework to look like more with a standard industry that we've seen
+And that's it! We've refactored our framework to better align with the industry standards we've observed.
+
+## Middleware Support
+
+Another important feature that would be great to have is middleware support! In frameworks like FastAPI, a simple middleware might look like this:
+```python
+from fastapi import FastAPI, Request
+
+app = FastAPI()
+
+@app.middleware("http")
+async def print_route(request: Request, call_next):
+    print(f"Route: {request.url.path} - Method: {request.method}")
+    response = await call_next(request)
+    return response
+
+@app.get("/example")
+async def example_route():
+    return {"message": "This is an example route"}
+```
+
+You create an instance of the application and then attach a middleware to it, so let's start building!
+First, in our `Server` class, let's add a `middlewares` attribute that will be responsible for storing all the middlewares we add.
+```python
+class Server(asyncio.Protocol, Router):
+    def __init__(self, loop=None):
+        self.mapping = []
+        self.loop = loop or asyncio.get_event_loop()
+        self.encoding = "utf-8"
+        self.url = None
+        self.body = None
+        self.transport: Optional[asyncio.Transport] = None
+        self.middlewares = []
+        self._request_parser = HttpRequestParser(self)
+```
+
+With this array added, we can iterate over it in our `request_callback_handler` method
+
+```python
+    async def request_callback_handler(self, method, request, **kwargs):
+        try:
+            try:
+                for middleware in self.middlewares:
+                    await middleware(request)
+    .....
+```
+
+With this added, we can include a new annotation in our `App` class.
+
+```python
+    def middleware(self):
+        def decorator(func):
+            self.server.middlewares.append(func)
+            return func
+
+        return decorator
+```
+
+It simply adds a method inside the decorator that will be iterated over in our `Server` class, and that's it! 
+Now we can add middleware to our web server, for example:
+
+```python
+@app.middleware()
+async def add_logger(request: Request):
+    try:
+        print(f"HTTP {request.method}: {request.url} {request.body if request.body else ''}")
+    except Exception as e:
+        print(f"HTTP {request.method}: {request}, {e!s}")
+```
 
 And that's it! Now you have your own simple Python framework. I hope this guide helped you understand how this type of framework works under the hood.
 
