@@ -39,3 +39,4 @@ class Response:
             messages.append("\n" + json.dumps(self.body))
 
         return "\n".join(messages)
+

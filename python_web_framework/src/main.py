@@ -1,14 +1,31 @@
-import asyncio
+from python_web_framework.src.app import App
+from python_web_framework.src.request import Request
+from python_web_framework.src.routes.jwt import jwt_app
+from python_web_framework.src.routes.user import user_app
+from routes.hello_world import hello_world_app
 
-from python_web_framework.src.routes import hello_world_app
-from python_web_framework.src.server import Server
+app = App()
 
-loop = asyncio.get_event_loop()
-protocol = Server()
 
-hello_world_app(protocol)
+@app.middleware()
+async def add_logger(request: Request):
+    try:
+        print(f"HTTP {request.method}: {request.url} {request.body if request.body else ''}")
+    except Exception as e:
+        print(f"HTTP {request.method}: {request}, {e!s}")
 
-server = loop.run_until_complete(
-    loop.create_server(lambda: protocol, host='127.0.0.1', port=8080)
-)
-loop.run_until_complete(server.serve_forever())
+
+@app.middleware()
+async def add_security(request: Request):
+    if request.url in ["/login"]:
+        return
+    if not request.headers.get('Authorization', None):
+        raise Exception("Missing authorization")
+
+
+
+if __name__ == "__main__":
+    hello_world_app(app)
+    jwt_app(app)
+    user_app(app)
+    app.start('127.0.0.1', 8080)

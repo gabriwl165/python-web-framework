@@ -764,6 +764,563 @@ And your response should be:
 {"message": "Not Found"}
 ```
 
+## Handling Dynamic URL's
+
+One important aspect of web development is handling dynamic URLs, and what I want to say is that it's normal to have these kinds of URLs.
+```bash
+/users/{id}
+```
+
+And then, we send a request like:
+```bash 
+GET /users/123456
+```
+
+And we need to be able to handle this ID as a parameter, for example:
+```python
+    async def process_dynamic_url(request: Request, name: str):
+        try:
+            return Response(
+                200,
+                {
+                    'msg': f'Hello {name}'
+                }
+            )
+        except Exception as e:
+            print(e)
+
+    server.add_route("/hello_world/{name}", {
+        "GET": process_dynamic_url
+    })
+```
+
+And you might start to think, 'This is so complex; there must be some sophisticated business logic to implement it.' And voilà, this can be achieved by using regex in our `Router` class.
+First, let's understand how regex works and how this can be achieved. We have two strings `"/users/{id}/"` and `"/users/12345/"`. Let's create a prototype:
+```python
+import re
+match = re.match(r'/users/(.+?)/', "/users/123/")
+match.groups()
+"""
+Should return:
+('123',)
+"""
+```
+A simple dive into `r'/users/(.+?)/'`:
+- `()` Captures and stores whatever matches the pattern inside the parentheses.
+- `.` Matches any character except a newline
+- `+` A quantifier that matches one or more of the preceding token
+- `?` Matches as few characters as possible (non-greedy match)."
+
+But there's a better way to handle this regex. We have a feature called 'groups' that allows us to use the `groupdict()` method to get a dictionary. 
+```json
+{
+  "id": "123"
+}
+```
+And this helps us a lot! With this dictionary, we can deconstruct it using `**` and pass it as keyword arguments into our methods, routers, or controllers. 
+Our new regex pattern will be (?P<id>.+?). Let's take a brief dive into this regex!
+- `(?P<id>...)` Captures the matched content as id in our dictionary, just as we want.
+- `.+?` Matches one or more characters, except for a newline, using a non-greedy approach.
+
+```python
+import re
+
+match = re.match(r'^/users/(?P<id>[^/]+?)/$', "/users/123/")
+match.groupdict()
+"""
+Our response should look like this:
+{'id': '123'}
+"""
+```
+
+And I know, you're probably thinking 'Oh god' after seeing this regex, but I'll try to make it as simple as I can!
+
+`^/users/(?P<id>[^/]+?)/$`
+- `^` Indicates the beginning of the string, meaning no characters can appear before `/users`
+- `$` Indicates the end of the string, meaning no characters can appear after `/(?P<id>[^/]+?)/`
+- `(?P<id>...)` Matches anything within this part of the regex and captures it as the group id, which we can reference as `<id>`.
+- `[^/]+?` Matches one or more characters except for newlines and the slash `(/)`, in a non-greedy manner. 
+
+So now we get it! We need to be able to pass something like `/users/{id}` and have it pre-compiled as the regex `^/users/(?P<id>[^/]+?)/$`.
+
+Now, let's return to our Router class. We have an add method that will be responsible for receiving the URL and determining which method should be executed.
+
+```python
+    def add(self, path, methods_handler):
+        self.mapping[path] = methods_handler
+```
+
+Now, our dictionary needs to have the converted URL, not the original one. Let's start by creating a method that will convert these URLs for us.
+```python
+    def parse_dynamic_url(self, url):
+        leading_slash = url.startswith('/')
+        trailing_slash = url.endswith('/')
+        url = url.strip('/')
+
+        pattern = re.compile(r"{(.*?)}")
+
+        url_path = [
+            pattern.sub(lambda m: f"(?P<{m.group(1)}>[^/]+?)", part)
+            for part in url.split('/') if part
+        ]
+
+        path = '/' + '/'.join(url_path) if leading_slash else '/'.join(url_path)
+        if trailing_slash and not path.endswith('/'):
+            path += '/'
+
+        return f"^{path}$"
+```
+
+Let's start with `pattern = re.compile(r"{(.*?)}")`. This code compiles a regex pattern to match any dynamic parts of the URL that should be variable.
+
+For example, with URLs like `/users/{id}` or `/book/{name}`, we need to recognize that there is dynamic input between the `{}` brackets, and this regex helps us identify it.
+
+```python
+url_path = [
+    pattern.sub(lambda m: f"(?P<{m.group(1)}>[^/]+?)", part)
+    for part in url.split('/') if part
+]
+```
+
+We'll split our URL into pieces by the slash (`/`). If any part of the URL matches our regex, it will be converted into our boilerplate format.
+
+For example, `/book/{name}/action/{author}` would be transformed into `/book/(?P<name>[^/]+?)/action/(?P<author>[^/]+?)`.
+
+Now, for the last part:
+```python
+def parse_dynamic_url(self, url):
+        leading_slash = url.startswith('/')
+        trailing_slash = url.endswith('/')
+        ...
+        path = '/' + '/'.join(url_path) if leading_slash else '/'.join(url_path)
+        if trailing_slash and not path.endswith('/'):
+            path += '/'
+
+        return f"^{path}$"
+```
+
+It basically adds a slash at the beginning or the end, if it was originally there. 
+- `/book/{name}/action/{author}` -> `^/book/(?P<name>[^/]+?)/action/(?P<author>[^/]+?)$`
+- `/book/{name}/action/{author}/` -> `^/book/(?P<name>[^/]+?)/action/(?P<author>[^/]+?)/$`
+- `book/{name}/action/{author}/` -> `^book/(?P<name>[^/]+?)/action/(?P<author>[^/]+?)/$`
+
+I highly suggest you debug and test this method on your own, it will make more sense when you see it working.
+
+Now that we have a method to convert our path into a pre-compiled regex, we need to refactor the `add` method.
+```python
+    def add(self, path, methods_handler):
+        self.mapping[self.parse_dynamic_url(path)] = methods_handler
+```
+
+In our `dispatch` method, we need to handle the request by iterating over our mapping array of endpoints and matching each one with our regex. 
+If there's no match, we move to the next endpoint until we find a match or return a `404 Not Found` to the client. 
+```python
+    async def dispatch(self, request: Request):
+        # Iterate through the compiled patterns
+        for url, pattern in self.mapping.items():
+            match = re.match(url, request.url)
+            if not match:
+                continue
+    
+            params = match.groupdict()
+            handler = self.mapping[url].get(request.method)
+    
+            if handler:
+                await self.request_callback_handler(handler, request, **params)
+                return
+        # Handle 404 Not Found if no matching route or method is found
+        await self.response_writer(
+            Response(
+                404,
+                {'message': 'Not Found'}
+            )
+        )
+```
+Once a match is found with our regex, we can use `match.groupdict()` to get a dictionary with our captured groups. Then, we pass it as keyword arguments (`kwargs`) into our route.
+
+And that's it! Now, we just need to add a new route to our `hello_world` file `(python_web_framework/src/routes/hello_world.py)`.
+
+```python
+    async def process_dynamic_url(request: Request, name: str):
+        try:
+            return Response(
+                200,
+                {
+                    'msg': f'Hello {name}'
+                }
+            )
+        except Exception as e:
+            print(e)
+    
+    server.add_route("/hello_world/{name}", {
+        "GET": process_dynamic_url
+    })
+```
+
+With our new route created, we can test it in our terminal with:
+```bash
+curl -X GET http://127.0.0.1:8080/hello_world/Gabs
+{"msg": "Hello Gabs"}
+```
+
+## Let's make some refactors
+
+When building a route, we encounter some boilerplate code, like this:
+```python
+def hello_world_app(server: Server):
+    async def hello_world(request: Request):
+        print(f"Handle: {request.method} {request.url} {request.body}")
+
+    server.add_route("/hello_world", {"GET": hello_world})
+```
+
+However, this is no longer the standard for many frameworks that provide routing systems, like FastAPI:
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/")
+def read_root():
+    return {"message": "Hello, World!"}
+```
+
+So, how can we improve our library? Perhaps we could provide an object that offers decorators like `@get`, `@post`, and `@put`, similar to other frameworks, instead of using `server.add_route("/hello_world", {"GET": hello_world})` as we did before. 
+Let's get started!
+
+First, our `main.py` should look like this:
+```python
+from python_web_framework.src.app import App
+from routes.hello_world import hello_world_app
+
+app = App()
+
+
+if __name__ == "__main__":
+    hello_world_app(app)
+    app.start('127.0.0.1', 8080)
+```
+
+What can we do to make this happen? Let's start by building our `App` class.
+First, we need to create our constructor, which will instantiate all the necessary objects.
+```python
+class App:
+    def __init__(self):
+        self.loop = asyncio.get_event_loop()
+        self.server = Server(self.loop)
+        self.socket = None
+```
+
+- `self.loop` will handle the current loop in our process from asyncio
+- `self.server` will handle our `Server` class that we've built
+- `self.socket` will handle our binding into the operational system 
+
+So, with all these attributes instantiated, we can start building our decorators. Let's begin with a simple `POST` decorator, as the rest will follow the same boilerplate.
+
+```python
+class App:
+    def __init__(self):
+        self.loop = asyncio.get_event_loop()
+        self.server = Server(self.loop)
+        self.socket = None
+
+    def post(self, path):
+        def decorator(func):
+            self.server.add_route(path, "POST", func)
+            return func
+        return decorator
+```
+
+Basically, our `post` method returns another method, which we can refer to as a `decorator` or `wrapper`; there are many ways to name it.
+Our `self.server.add_route` is handling all the work, so let's dive into what our `Server` class is doing!
+
+Our `add_route` method will look like this:
+```python
+    def add_route(self, path: str, methods_handler: dict):
+        self.add(path, methods_handler)
+```
+
+But now we need to include the HTTP methods as well (e.g., `POST`, `GET`, `PUT`, etc.), so let's do it like this:
+```python
+    def add_route(self, path: str, method: str, handler: Callable):
+        self.add(path, method, handler)
+```
+
+But this small change affects our `Router` class, so we need to refactor it as well.
+The first change will be in our `add` method, which looks like this:
+```python
+    def add(self, path, methods_handler):
+        self.mapping[self.parse_dynamic_url(path)] = methods_handler
+```
+
+Let's change it from a dictionary to a list of sets, since we now need to match both the URL and the HTTP method, and a dictionary won't be as helpful.
+```python
+    def add(self, path: str, method: str, handler: Callable):
+        self.mapping.append((self.parse_dynamic_url(path), method, handler))
+```
+However, changing it from a dictionary to a list will require modifications to our `Server` class, which used to look like this:
+```python
+class Server(asyncio.Protocol, Router):
+    def __init__(self, loop=None):
+        self.mapping = {}
+        self.loop = loop or asyncio.get_event_loop()
+        self.encoding = "utf-8"
+        self.url = None
+        self.body = None
+        self.transport: Optional[asyncio.Transport] = None
+        self._request_parser = HttpRequestParser(self)
+```
+
+To it
+```python
+class Server(asyncio.Protocol, Router):
+    def __init__(self, loop=None):
+        self.mapping = []
+        self.loop = loop or asyncio.get_event_loop()
+        self.encoding = "utf-8"
+        self.url = None
+        self.body = None
+        self.transport: Optional[asyncio.Transport] = None
+        self._request_parser = HttpRequestParser(self)
+```
+
+Now, let's go back to our `Router` class, as we haven't finished yet. Our `dispatch` method, which used to look like this:
+```python
+    async def dispatch(self, request: Request):
+        # Iterate through the compiled patterns
+        for url, pattern in self.mapping.items():
+            match = re.match(url, request.url)
+            if not match:
+                continue
+
+            params = match.groupdict()
+            handler = self.mapping[url].get(request.method)
+
+            if handler:
+                await self.request_callback_handler(handler, request, **params)
+                return
+
+        # Handle 404 Not Found if no matching route or method is found
+        await self.response_writer(
+            Response(
+                404,
+                {'message': 'Not Found'}
+            )
+        )
+```
+
+Since our `mapping` is now a list, not a dictionary, the following code will no longer work:
+```python
+    for url, pattern in self.mapping.items():
+                match = re.match(url, request.url)
+                if not match:
+                    continue
+    
+                params = match.groupdict()
+                handler = self.mapping[url].get(request.method)
+    
+                if handler:
+                    await self.request_callback_handler(handler, request, **params)
+                    return
+```
+
+So, one way to deal with this problem, since we have the `request: Request`, is:
+```python
+    handler = [
+        (handler, re.match(path, request.url))
+        for path, method, handler in self.mapping
+        if re.match(path, request.url) and
+           method == request.method
+    ]
+```
+
+`self.mapping` likely contains a list of tuples, where each tuple represents a route and consists of three elements.
+- `path` (the URL pattern),
+- `method` (the HTTP method like GET, POST),
+- `handler` (the function or class that will handle the request if the route matches)
+- `request.url` is the URL of the incoming HTTP request.
+- `request.method` is the HTTP method of the incoming request (e.g., GET, POST).
+- `re.match()` is a regular expression function used to check if a URL matches a specific pattern, since our `add` method makes a `self.parse_dynamic_url` before add inside the list.
+
+With `handler`, we can determine if there is a route matching this pattern. After the list comprehension, we can check and respond if no route is found.
+```python
+    if not handler:
+        await self.response_writer(
+            Response(
+                404,
+                {'message': 'Not Found'}
+            )
+        )
+        return
+```
+
+If everything is OK, we can pass the request to our `request_callback_handler` from the `Server` class, which we will also refactor.
+```python
+    handle, match = handler[0]
+    params = match.groupdict()
+    if handler:
+        await self.request_callback_handler(handle, request, **params)
+        return
+```
+
+Back to our `Server` class, we need to make some adjust in `request_callback_handler` 
+Our method used to look like this:
+```python
+    async def request_callback_handler(self, method, request, **kwargs):
+        try:
+            resp = await method(request, **kwargs)
+        except Exception as exc:
+            resp = format_exception(exc)
+
+        if not isinstance(resp, Response):
+            raise RuntimeError(f"expect Response instance but got {type(resp)}")
+
+        self.response_writer(resp)
+```
+
+But I encountered a problem: if `format_exception(exc)` throws an exception, we aren't handling it, which causes the socket to stay connected and never release the connection. 
+Since covering all bugs is not the focus of this article, and we're simply showing the basic structure of a web framework, we can add another try/catch block to fix it.
+
+```python
+    async def request_callback_handler(self, method, request, **kwargs):
+        try:
+            try:
+                resp = await method(request, **kwargs)
+            except Exception as exc:
+                resp = format_exception(exc)
+
+            if not isinstance(resp, Response):
+                raise RuntimeError(f"expect Response instance but got {type(resp)}")
+
+            self.response_writer(resp)
+        except Exception as _:
+            self.response_writer(Response(
+                500,
+                {
+                    'message': "Unexpected error"
+                }
+            ))
+```
+
+So, basically, we've refactored our `Server` and `Router` classes to handle this new approach.
+
+Now, returning to our `App` class, we can add another decorator to handle different types of HTTP methods:
+```python
+class App:
+    def __init__(self):
+        self.loop = asyncio.get_event_loop()
+        self.server = Server(self.loop)
+        self.socket = None
+
+    def get(self, path):
+        def decorator(func):
+            self.server.add_route(path, "GET", func)
+            return func
+        return decorator
+
+    def post(self, path):
+        def decorator(func):
+            self.server.add_route(path, "POST", func)
+            return func
+        return decorator
+
+    def put(self, path):
+        def decorator(func):
+            self.server.add_route(path, "PUT", func)
+            return func
+        return decorator
+```
+
+With all of this done, there's just one last thing: how can we make this work? `app.start('127.0.0.1', 8080)`
+
+We just need to extract the old code, which used to look like this:
+```python
+    server = loop.run_until_complete(
+        loop.create_server(lambda: protocol, host='127.0.0.1', port=8080)
+    )
+    loop.run_until_complete(server.serve_forever())
+```
+
+Into a method that we can call `start`.
+```python
+
+    def start(self, host, port):
+        self.socket = self.loop.run_until_complete(
+            self.loop.create_server(lambda: self.server, host=host, port=port)
+        )
+        print(f"Server started on {host}:{port}")
+        self.loop.run_until_complete(self.socket.serve_forever())
+```
+And that's it! We've refactored our framework to better align with the industry standards we've observed.
+
+## Middleware Support
+
+Another important feature that would be great to have is middleware support! In frameworks like FastAPI, a simple middleware might look like this:
+```python
+from fastapi import FastAPI, Request
+
+app = FastAPI()
+
+@app.middleware("http")
+async def print_route(request: Request, call_next):
+    print(f"Route: {request.url.path} - Method: {request.method}")
+    response = await call_next(request)
+    return response
+
+@app.get("/example")
+async def example_route():
+    return {"message": "This is an example route"}
+```
+
+You create an instance of the application and then attach a middleware to it, so let's start building!
+First, in our `Server` class, let's add a `middlewares` attribute that will be responsible for storing all the middlewares we add.
+```python
+class Server(asyncio.Protocol, Router):
+    def __init__(self, loop=None):
+        self.mapping = []
+        self.loop = loop or asyncio.get_event_loop()
+        self.encoding = "utf-8"
+        self.url = None
+        self.body = None
+        self.transport: Optional[asyncio.Transport] = None
+        self.middlewares = []
+        self._request_parser = HttpRequestParser(self)
+```
+
+With this array added, we can iterate over it in our `request_callback_handler` method
+
+```python
+    async def request_callback_handler(self, method, request, **kwargs):
+        try:
+            try:
+                for middleware in self.middlewares:
+                    await middleware(request)
+    .....
+```
+
+With this added, we can include a new annotation in our `App` class.
+
+```python
+    def middleware(self):
+        def decorator(func):
+            self.server.middlewares.append(func)
+            return func
+
+        return decorator
+```
+
+It simply adds a method inside the decorator that will be iterated over in our `Server` class, and that's it! 
+Now we can add middleware to our web server, for example:
+
+```python
+@app.middleware()
+async def add_logger(request: Request):
+    try:
+        print(f"HTTP {request.method}: {request.url} {request.body if request.body else ''}")
+    except Exception as e:
+        print(f"HTTP {request.method}: {request}, {e!s}")
+```
+
 And that's it! Now you have your own simple Python framework. I hope this guide helped you understand how this type of framework works under the hood.
 
 
